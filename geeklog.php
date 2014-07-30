@@ -115,7 +115,7 @@ function parse($name,$filename = null,$meta = false) {
     list($key, $value) = preg_split('/\s*:\s*/', $line, 2);
 
     switch ( $key ) {
-    case '' : continue; break;
+    case '' : continue 2; break;
     case 'tags': $value = explode(' ', $value); break;
     case 'timestamp': 
       if ( !is_numeric($value) ) {
@@ -215,26 +215,6 @@ function transform_ratamarkup($text) {
   };
 
   return Ratamarkup\process( $text, null, array( 'link_callback' => $link_callback ) );
-}
-
-function transform_ratamarkup_cli($text) {
-
-  $desc = array( 0 => array('pipe','r'), 1 => array('pipe','w'), 2 => array('pipe', 'w') );
-  $cmd = "/site/scripts/ratamarkup/ratamarkup";
-
-  $p = proc_open($cmd, $desc, $pipes);
-
-  fwrite( $pipes[0], $text );
-  fclose( $pipes[0] );
-
-  $processed = stream_get_contents( $pipes[1] );
-
-  fclose( $pipes[1] );
-  fclose( $pipes[2] );
-  proc_close($p);
-
-  return $processed;
-
 }
 
 function transform_php($text) {
