@@ -9,20 +9,26 @@ $settings = array(
 		  '404'       => '404',
 		  'suffixes'  => array('.txt','.html'),
 		  'transform' => 'ratamarkup',
+		  'template'  => '/site/www/geekmx/templates/geekmx.php',
 		  );
+
+@include_once("geeklog.config.php");
 
 $meta_keys = array('metatime', 'title', 'author', 'tags', 'keywords', 'description', 'timestamp' );
 
-@include_once("/site/scripts/ratamarkup/ratamarkup.php");
+require_once("/site/scripts/ratamarkup/ratamarkup.php");
+
 exit( main() );
 
 function main() {
+
+  global $settings;
 
   check_xattr();
 
   header('Content-type: text/html; charset=utf-8');
   $doc = parse( $_REQUEST['doc'] );
-  include_once("templates/geekmx.php");
+  @require_once($settings['template']);
 
   return 0;
 
@@ -37,7 +43,7 @@ function check_xattr() {
     $xattr = $xattr_ext->getFunctions();
   }
 
-  if ( $xattr['xattr_supported']->invoke( $settings['data_path'] ) ) {
+  if ( @$xattr['xattr_supported']->invoke( $settings['data_path'] ) ) {
     $settings['use_xattr'] = true;
   }
 
@@ -434,5 +440,18 @@ function block_include($acc,$tokens) {
     $out .= "$doc->body\n";
   }
   return $out;
+}
+
+function block_lyrics($acc, $tokens, $opt) {
+
+  $lines = explode("\n", $acc);
+  array_walk($lines, function (&$v,$k) {
+      $v = character_normal($v);
+    });
+
+  $out = '<div class="lyrics">' . implode("<br>\n", $lines) . '</div>';
+
+  return $out;
+
 }
 
