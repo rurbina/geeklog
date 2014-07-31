@@ -28,7 +28,8 @@ function main() {
 
   header('Content-type: text/html; charset=utf-8');
   $doc = parse( $_REQUEST['doc'] );
-  @require_once($settings['template']);
+
+  require_once($settings['template']);
 
   return 0;
 
@@ -432,6 +433,39 @@ function block_lyrics($acc, $tokens, $opt) {
   $out = '<div class="lyrics">' . implode("<br>\n", $lines) . '</div>';
 
   return $out;
+
+}
+
+function block_soundcloud_player($acc, $tokens, $opt) {
+
+  $params = array();
+  $defaults = array(
+		    'width' => '100%',
+		    'height' => '450',
+		    'style' => 'float:right;width:45%',
+		    );
+
+  foreach ( $tokens as $token ) {
+    list($k,$v) = explode("=", $token, 2);
+    if ( preg_match('/^§/u',$k) ) continue;
+
+    $params[$k] = $v;
+  }
+
+  foreach ( $defaults as $k => $v ) {
+    if ( $params[$k] == "" ) $params[$k] = $v;
+  }
+
+  array_walk($params, function(&$v,$k) { $v = \geeklog\html_pclean($v); } );
+
+  if ( $params['playlist'] != "" ) {
+    $params['src'] = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/playlists/$params[playlist]".
+      "&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;visual=false";
+  }
+
+  $iframe = "<iframe class=\"soundcloud_player $params[class]\" width=\"$params[width]\" height=\"$params[height]\" scrolling=\"no\" frameborder=\"no\" src=\"$params[src]\" style=\"$params[style]\"></iframe>\n";
+
+  return $iframe;
 
 }
 
