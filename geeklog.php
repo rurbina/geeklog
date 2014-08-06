@@ -4,17 +4,30 @@ use \stdClass;
 use Ratamarkup;
 
 $settings = array(
-		  'data_path' => '/site/www/geekmx/data',
-		  'name_re'   => '/^([0-9a-z_-]*).*$/',
-		  '404'       => '404',
-		  'suffixes'  => array('.txt','.html'),
-		  'transform' => 'ratamarkup',
-		  'template'  => '/site/www/geekmx/templates/geekmx.php',
+		  'data_path'        => '/site/www/geekmx/data',
+		  'name_re'          => '/^([0-9a-z_-]*).*$/',
+		  '404'              => '404',
+		  'suffixes'         => array('.txt','.html'),
+		  'transform'        => 'ratamarkup',
+		  'template'         => '/site/www/geekmx/templates/geekmx.php',
+		  'date_time_format' => '%c',
+		  'date_format'      => '%F',
+		  'time_format'      => '%k:%M',
 		  );
 
 @include_once("geeklog.config.php");
 
-$meta_keys = array('metatime', 'title', 'author', 'tags', 'keywords', 'description', 'timestamp' );
+$meta_keys = array(
+		   'metatime', 
+		   'title',
+		   'author',
+		   'tags',
+		   'keywords',
+		   'description',
+		   'timestamp',
+		   'comment',
+		   'revision',
+		   );
 
 require_once("/site/scripts/ratamarkup/ratamarkup.php");
 
@@ -50,10 +63,48 @@ function check_xattr() {
 
 }
 
+function clean_accents($str) {
+  return preg_replace(array('/á/iu','/é/iu','/í/iu','/ó/iu','/ú/iu','/ñ/iu','/ü/iu'),array('a','e','i','o','u','n','u'), $str);
+}
+
 function clean_name($name) {
-  $name = preg_replace(array('/á/u','/é/u','/í/u','/ó/u','/ú/u','/ñ/u','/ü/u'),array('a','e','i','o','u','n','u'), $name);
+  $name = clean_accents($name);
   $name = preg_replace('/^([0-9a-z_-]*).*$/','$1',$name);
   return $name != '' ? $name : null;
+}
+
+function add_pretty_print_items(&$doc) {
+
+  global $settings;
+
+  $doc->name = clean_name( preg_replace('/\\..*$/', '', basename($doc->filename) ) );
+
+  if ( !$doc->title ) $doc->title = $doc->name;
+
+  $a_title = html_pclean( $doc->description ? $doc->description : $doc->title );
+  $doc->title_link = "<a href=\"{$doc->name}\" title=\"$a_title\">".html_clean($doc->title)."</a>";
+
+  $doc->name_link = "<a href=\"{$doc->name}\" title=\"$a_title\">".html_clean($doc->name)."</a>";
+
+  $doc->tags_string = is_array($doc->tags) ? implode(', ', $doc->tags) : '';
+
+  $doc->mtime_format = strftime($settings['mtime_format'] ? 
+				$settings['mtime_format'] : 
+				$settings['date_time_format'], 
+				$doc->mtime);
+
+  $doc->timestamp_format = strftime($settings['timestamp_format'] ? 
+				    $settings['timestamp_format'] : 
+				    $settings['date_time_format'],
+				    strtotime($doc->timestamp) );
+
+  $timestamp = is_numeric($doc->timestamp) ? $doc->timestamp : strtotime($doc->timestamp);
+
+  $doc->timestamp_date_format = $timestamp ?
+    strftime($settings['timestamp_date_format'] ? 
+	     $settings['timestamp_date_format'] : 
+	     $settings['date_format'],
+	     $timestamp ) : '';
 }
 
 function parse($name,$filename = null,$meta = false) {
@@ -104,6 +155,7 @@ function parse($name,$filename = null,$meta = false) {
       foreach ( $xattrs as $key => $value ) {
 	$doc->{$key} = $value;
       }
+      add_pretty_print_items($doc);
       return $doc;
     }
   }
@@ -128,6 +180,7 @@ function parse($name,$filename = null,$meta = false) {
     $doc->$key = $value;
   }
 
+  // if we only want metadata then discard the contents
   if ( $meta ) {
     $doc->body = '';
     if ( $settings['use_xattr'] ) save_xattrs($filename, $doc);
@@ -139,6 +192,7 @@ function parse($name,$filename = null,$meta = false) {
     }
   }
 
+  add_pretty_print_items($doc);
   return $doc;
 
 }
@@ -196,6 +250,7 @@ function transform_ratamarkup($text) {
 
     if ( !$text ) {
       $text = $href;
+      $href = clean_accents($href);
       $href = str_replace(" ", "_", strtolower($href));
     }
 
@@ -203,7 +258,7 @@ function transform_ratamarkup($text) {
       $ref = parse($href,null,true);
 
       if ( $ref === null ) {
-	return "<span class=\"notfound\">$text</span>";
+	return "<span class=\"notfound\" href=\"$href\">$text</span>";
       }
 
       $items = array();
@@ -285,13 +340,37 @@ function search($params = array()) {
 	break;
 
       case 'tag':
-	if ( !is_array($doc->tags) || !in_array( $value, $doc->tags ) )
-	  continue 2;
+	// this is a special case of or_tags containing only one
+      case 'or_tags':
+	// docs containing any of these will match
+	if ( !is_array($doc->tags) ) continue 2;
+	$tags = preg_split('/\s*,\s*/',$value);
+
+	foreach ( $tags as $tag ) { 
+	  if ( in_array( $tag, $doc->tags ) ) {
+	    break 2;
+	  }
+	}
+	continue 2;
+
+      case 'and_tags':
+	// docs containing all of these will match
+	if ( !is_array($doc->tags) ) continue 2;
+	$tags = preg_split('/\s*,\s*/',$value);
+
+	foreach ( $tags as $tag ) { 
+	  if ( !in_array( $tag, $doc->tags ) ) {
+	    continue 3;
+	  }
+	}
 	break;
 
       case 'not_tag':
-	if ( is_array($doc->tags) && in_array( $value, $doc->tags ) )
-	  continue 2;
+	if ( !is_array($doc->tags) ) break;
+	if ( !in_array( $value, $doc->tags ) ) break;
+	continue 2;
+
+      case 'match_all':
 	break;
 
       default:
@@ -307,42 +386,60 @@ function search($params = array()) {
 
   }
 
-  if ( $params['sort'] != '' ) {
+  if ( $params['sort'] ) {
     $will_sort = array();
+    $sort_flag = SORT_REGULAR;
+
     foreach ( $docs as $doc ) {
       switch ( $params['sort'] ) {
       case 'mtime':
       case 'time':
-	$will_sort[ $doc->mtime . "|" . strtolower( $doc->title ) ] = $doc;
+	$will_sort[ $doc->mtime . " |" . strtolower( $doc->title ) ] = $doc;
 	break;
       case 'timestamp':
-	$will_sort[ $doc->timestamp . "|" . strtolower( $doc->title ) ] = $doc;
+	$will_sort[$doc->timestamp] = $doc;
+	$sort_flag = SORT_NUMERIC;
 	break;
-      case 'timestamp':
       default:
 	array_push($will_sort,$doc);
       }
     }
 
     if ( $params['reverse'] )
-      krsort($will_sort);
+      krsort($will_sort, $sort_flag);
     else
-      ksort($will_sort);
+      ksort($will_sort, $sort_flag);
 
     return $will_sort;
   }
 
-  return $results;
+  return $docs;
 
 }
+
+////////////////////////////////////////////////////////////
+// These functions extend Ratamarkup
 
 namespace Ratamarkup;
 
-function block_omg($acc,$tokens) {
-  return "<p>OMG</p>\n";
-}
+/*
+  block_blog - lists articles
+  - articles can (should?) be filtered by tags
+  - they can (should?) be sorted by date descending
+  - if they include a break (a line with !break in ratamarkup or <!-- break --> in html)
+    then it stops there
+  - it adds a date in customizable pretty-format (set via the 'timestamp' header)
+  - adds an author ('author' header)
+  - adds a permalink
 
+  In the future it will also include sharing links for Facebook, Twitter and whatnot
+*/
 function block_blog($acc,$tokens) {
+
+  global $settings;
+
+  if ( !$settings['date_format'] )
+    $settings['date_format'] = '%c';
 
   $params = array();
 
@@ -361,14 +458,15 @@ function block_blog($acc,$tokens) {
     $out .= $top;
     $link = "<a href=\"".\geeklog\clean_name(basename($file->filename)).
       "\" title=\"".$file->title."\">";
-    $date = date( DATE_RFC822, (int)($file->timestamp) );
+    $date = strftime( $settings['date_format'], (int)($file->timestamp) );
     if ( $rest ) {
-      $out .= "<p>$link"."Leer el resto</a></p>\n";
+      $out .= "<p class=\"blog_break\">$link"."Leer el resto</a></p>\n";
     }
     $out .= "<p class=\"blog_footer\"><i>{$date} por $doc->author</i> [{$link}Permalink</a>]</p>\n";
   }
 
   return $out;
+
 }
 
 function block_doclist($acc,$tokens) {
@@ -401,6 +499,54 @@ function block_doclist($acc,$tokens) {
   $out .= "</ul>";
 
   return $out;
+
+}
+
+function block_doclist_table($acc,$tokens) {
+
+  global $settings;
+  $strftime_format = $settings['date_format'] ? $settings['date_format'] : '%c';
+
+  $params = parse_tokens_as_config($tokens);
+
+  $list = \geeklog\search($params);
+
+  $fields = preg_split('/\s*,\s*/', $params['fields']);
+  $headers = preg_split('/\s*,\s*/', $params['headers'] ? $params['headers'] : $params['fields'] );
+  $widths = preg_split('/\s*,\s*/', $params['widths']);
+
+  if ( !is_array($widths) ) $widths = array();
+
+  $out = "<table>\n\t<tr>\n";
+
+  foreach ( $headers as $h ) {
+    $w = array_shift($widths);
+    if ( $w ) $w = " width=\"$w\"";
+
+    $out .= "\t\t<th$w>$h</th>\n";
+  }
+
+  $out .= "\t</tr>\n";
+
+  $list = \geeklog\search($params);
+
+  foreach ( $list as $file ) {
+
+    $doc = \geeklog\parse($file->filename,$file->filename,true);
+
+    $out .= "\t<tr>\n";
+    foreach ( $fields as $f ) {
+      $value = $f ? $doc->$f : '';
+      $out .= "\t\t<td>$value</td>\n";
+    }
+    $out .= "\t</tr>\n";
+
+  }
+
+  $out .= "</table>\n";
+
+  return $out;
+
 }
 
 function block_break($acc,$tokens) {
@@ -434,6 +580,110 @@ function block_lyrics($acc, $tokens, $opt) {
 
   return $out;
 
+}
+
+function block_orgtbl($acc, $tokens, $opt) {
+
+  $settings = parse_tokens_as_config($tokens);
+
+  $lines = explode("\n",$acc);
+
+  $rows = array();
+
+  $rowspan = array();
+
+  $col_widths = preg_split('/\s*,\s*/', $settings['widths']);
+
+  foreach ( $lines as $line ) {
+    $cells = explode( "|", $line );
+
+    // clear exceeding stuff
+    array_shift($cells);
+    array_pop($cells);
+
+    $row = array( 'cells' => $cells );
+
+    if ( !$settings['rowspan'] ) {
+      if ( preg_match('/^\|-/', $line) ) continue;
+
+      array_walk($row['cells'], function(&$v,$k) {
+	  $v = str_replace('\vert','|',$v); 
+	  $v = character_normal($v);
+	});
+
+      array_push($rows, $row);
+
+    }
+    // opted-in to rowspans, so you need divisions
+    else {
+
+      if ( preg_match('/^\|-/', $line) ) {
+
+	if ( sizeof($rowspan[0]['cells']) == 0 ) {
+	  $rowspan = array();
+	  continue;
+	}
+
+	$merged = array();
+	foreach ( $rowspan as $row ) {
+	  foreach ( $row['cells'] as $idx => $v ) {
+	    $merged[$idx] .= "$v\n";
+	  }
+	}
+
+	array_walk($merged, function(&$v,$k, $o) {
+	    $v = str_replace('\vert','|',$v); 
+	    $v = preg_replace('/^\s+|\s+$/m','',$v);
+	    $v = block_normal($v, array(), $o);
+	  },
+	  $opt
+	  );
+
+	$row['cells'] = $merged;
+
+	array_push($rows, $row);
+
+	$rowspan = array();
+      }
+      else {
+	array_push($rowspan, $row);
+      }
+    }
+
+  }
+
+  $rendered = "<table><tbody>\n";
+  $header = true;
+
+  foreach ( $rows as $row ) {
+
+    if ( !is_array($row['cells']) ) continue;
+
+    $rendered .= "\t<tr>\n";
+
+    foreach ( $row['cells'] as $cell ) {
+      if ( $header ) {
+	$width = array_shift($col_widths);
+	$tag = $width ? "<th width=\"$width\">" : "</th>";
+	$rendered .= "\t\t$tag$cell</th>\n";
+      }
+      else {
+	$rendered .= "\t\t<td>$cell</td>\n";
+      }
+    }
+
+    $rendered .= "\t</tr>\n";
+    $header = false;
+
+  }
+
+  $rendered .= "</tbody></table>\n";
+
+  return $rendered;
+
+}
+
+function block_toc($acc,$tokens,$opt) {
 }
 
 function block_soundcloud_player($acc, $tokens, $opt) {
