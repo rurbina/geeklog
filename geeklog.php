@@ -3,6 +3,7 @@ namespace geeklog;
 use \stdClass;
 use Ratamarkup;
 
+// default settings
 $settings = array(
 	'data_path'        => 'data',
 	'name_re'          => '/^([0-9a-z_-]*).*$/',
@@ -17,6 +18,7 @@ $settings = array(
 
 @include_once("geeklog.config.php");
 
+// these are the keys cached in xattrs
 $meta_keys = array(
 	'metatime', 
 	'title',
@@ -29,14 +31,19 @@ $meta_keys = array(
 	'revision',
 );
 
+// prepend the customized include path
 if ( $settings['include_path'] ) {
 	set_include_path(get_include_path() . PATH_SEPARATOR . $settings['include_path'] );
 }
 
+// we could live without it but no
 require_once("ratamarkup.php");
 
 exit( main() );
 
+/*
+  main() - entry to the web front
+*/
 function main() {
 
 	global $settings;
@@ -52,6 +59,7 @@ function main() {
 
 }
 
+// check if xattr are supported by php and by the filesystem
 function check_xattr() {
 
 	global $settings, $xattr;
@@ -66,16 +74,19 @@ function check_xattr() {
 
 }
 
+// remove accents
 function clean_accents($str) {
 	return preg_replace(array('/á/iu','/é/iu','/í/iu','/ó/iu','/ú/iu','/ñ/iu','/ü/iu'),array('a','e','i','o','u','n','u'), $str);
 }
 
+// clean a name, removing spaces, symbols and whatnot
 function clean_name($name) {
 	$name = clean_accents($name);
 	$name = preg_replace('/^([0-9a-z_-]*).*$/','$1',$name);
 	return $name != '' ? $name : null;
 }
 
+// here we automagically add some pretty print items for tables and templates
 function add_pretty_print_items(&$doc) {
 
 	global $settings;
@@ -110,6 +121,7 @@ function add_pretty_print_items(&$doc) {
 				 $timestamp ) : '';
 }
 
+// parse a document or file; meta=true doesn't parse/transform the body
 function parse($name,$filename = null,$meta = false) {
 
 	global $settings;
@@ -200,6 +212,7 @@ function parse($name,$filename = null,$meta = false) {
 
 }
 
+// load xattrs for given file
 function load_xattrs($filename) {
 
 	global $meta_keys, $xattr;
@@ -217,6 +230,7 @@ function load_xattrs($filename) {
 	return $attrs;
 }
 
+// save xattrs for given file
 function save_xattrs($filename,$doc) {
 
 	global $meta_keys, $xattr;
@@ -229,12 +243,14 @@ function save_xattrs($filename,$doc) {
 
 }
 
+// clean a string for printing in html attributes
 function html_pclean($text) {
 	$text = html_clean($text);
 	$text = str_replace('"','&quot;',$text);
 	return $text;
 }
 
+// same as html_pclean but doesn't clean double-quotes
 function html_clean($text) {
 	$text = str_replace('&','&amp;',$text);
 	$text = str_replace('<','&lt;',$text);
@@ -242,9 +258,19 @@ function html_clean($text) {
 	return $text;
 }
 
+////////////////////////////////////////////////////////////
+// transform_x functions
+// they take a string and parse it in some way
+// and then return the output, in html-printable format
+
+// parse using ratamarkup
 function transform_ratamarkup($text) {
 	global $settings;
 
+	// ratamarkup takes a callback function for special
+	// parsing of links --- here we provide it to set
+	// some special meta tags for in-site links and
+	// rel="nofollow" for external links
 	$link_callback = function($m) {
 
 		global $settings;
@@ -276,15 +302,21 @@ function transform_ratamarkup($text) {
 	return Ratamarkup\process( $text, null, array( 'link_callback' => $link_callback ) );
 }
 
+// evaluate as php and return an html string
 function transform_php($text) {
 	return eval($text);
 }
 
+// evaluate body as php and then through ratamarkup
 function transform_ratamarkup_php($text) {
 	$mk = eval($text);
 	return transform_ratamarkup($mk);
 }
 
+////////////////////////////////////////////////////////////
+// utility functions
+
+// returns a list of all files in the data path
 function list_files() {
 
 	global $settings;
@@ -311,6 +343,7 @@ function list_files() {
 
 }
 
+// same as list_files but with filters
 function search($params = array()) {
 
 	$docs = list_files();
@@ -369,9 +402,15 @@ function search($params = array()) {
 				break;
 
 			case 'not_tag':
-				if ( !is_array($doc->tags) ) break;
-				if ( !in_array( $value, $doc->tags ) ) break;
-				continue 2;
+				$value = array($value);
+			case 'not_tags':
+				$tags = is_array($value) ? $value : preg_split('/\s*,\s*/', $value);
+				foreach ( $tags as $tag ) {
+					if ( !is_array($doc->tags) ) break;
+					if ( in_array( $tag, $doc->tags ) )
+						continue 3;
+				}
+				break;
 
 			case 'match_all':
 				break;
@@ -422,6 +461,7 @@ function search($params = array()) {
 
 ////////////////////////////////////////////////////////////
 // These functions extend Ratamarkup
+// 
 
 namespace Ratamarkup;
 
@@ -472,6 +512,7 @@ function block_blog($acc,$tokens) {
 
 }
 
+// prints a list of document names/links
 function block_doclist($acc,$tokens) {
 
 	$params = array();
@@ -505,6 +546,7 @@ function block_doclist($acc,$tokens) {
 
 }
 
+// prints a table of documents, you can specify fields
 function block_doclist_table($acc,$tokens) {
 
 	global $settings;
@@ -552,10 +594,12 @@ function block_doclist_table($acc,$tokens) {
 
 }
 
+// inserts a line containing the string "<!-- break -->", for block_blog
 function block_break($acc,$tokens) {
 	return "<!-- break -->\n";
 }
 
+// includes a file --- warning, it doesn't check for loops
 function block_include($acc,$tokens) {
 
 	global $included_already;
@@ -572,6 +616,7 @@ function block_include($acc,$tokens) {
 	return $out;
 }
 
+// plain mode but with <br>s --- hey, they're useful sometimes!
 function block_lyrics($acc, $tokens, $opt) {
 
 	$lines = explode("\n", $acc);
@@ -585,6 +630,7 @@ function block_lyrics($acc, $tokens, $opt) {
 
 }
 
+// turns an emacs' orgtbl into an html table, for my editing convenience
 function block_orgtbl($acc, $tokens, $opt) {
 
 	$settings = parse_tokens_as_config($tokens);
@@ -667,7 +713,7 @@ function block_orgtbl($acc, $tokens, $opt) {
 		foreach ( $row['cells'] as $cell ) {
 			if ( $header ) {
 				$width = array_shift($col_widths);
-				$tag = $width ? "<th width=\"$width\">" : "</th>";
+				$tag = $width ? "<th width=\"$width\">" : "<th>";
 				$rendered .= "\t\t$tag$cell</th>\n";
 			}
 			else {
@@ -686,9 +732,11 @@ function block_orgtbl($acc, $tokens, $opt) {
 
 }
 
+// generates a table of contents (or will, eventually)
 function block_toc($acc,$tokens,$opt) {
 }
 
+// outputs an iframe with a soundcloud player
 function block_soundcloud_player($acc, $tokens, $opt) {
 
 	$params = array();
@@ -722,13 +770,24 @@ function block_soundcloud_player($acc, $tokens, $opt) {
 
 }
 
-function block_youtube_video($acc, $tokens, $opt) {
+// outputs the tags for an embedded youtube video
+function block_youtube($acc, $tokens, $opt) {
 
 	$params = parse_tokens_as_config($tokens);
 
-	$iframe = "<iframe class=\"youtube_video\" width=\"420\" height=\"315\" ".
-		"src=\"//www.youtube.com/embed/$params[video_id]\" ".
-		"frameborder=\"0\" allowfullscreen></iframe>";
+	if ( $params['video_id'] ) {
+		$iframe = '<iframe class="youtube_video" width="420" height="315" '.
+			"src=\"//www.youtube.com/embed/$params[video_id]\" ".
+			'frameborder="0" allowfullscreen></iframe>';
+	}
+	elseif ( $params['list_id'] ) {
+		$iframe = '<iframe class="youtube_list" width="560" height="315" '.
+			"src=\"//www.youtube.com/embed/videoseries?list=$params[list_id]\" ".
+			'frameborder="0" allowfullscreen></iframe>';
+	}
+	else {
+		$iframe = "<!-- usage: §youtube_video video_id=VIDEOID | list_id=LISTID § -->\n";
+	}
 
 	return $iframe;
 
