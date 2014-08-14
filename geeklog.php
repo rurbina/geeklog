@@ -76,7 +76,11 @@ function check_xattr() {
 
 // remove accents
 function clean_accents($str) {
-	return preg_replace(array('/á/iu','/é/iu','/í/iu','/ó/iu','/ú/iu','/ñ/iu','/ü/iu'),array('a','e','i','o','u','n','u'), $str);
+	return preg_replace(
+		array('/á/iu','/é/iu','/í/iu','/ó/iu','/ú/iu','/ñ/iu','/ü/iu'),
+		array('a','e','i','o','u','n','u'),
+		$str
+	);
 }
 
 // clean a name, removing spaces, symbols and whatnot
@@ -102,23 +106,27 @@ function add_pretty_print_items(&$doc) {
 
 	$doc->tags_string = is_array($doc->tags) ? implode(', ', $doc->tags) : '';
 
-	$doc->mtime_format = strftime($settings['mtime_format'] ? 
-								  $settings['mtime_format'] : 
-								  $settings['date_time_format'], 
-								  $doc->mtime);
+	$doc->mtime_format = strftime(
+		$settings['mtime_format'] ? 
+		$settings['mtime_format'] : 
+		$settings['date_time_format'], 
+		$doc->mtime
+	);
 
-	$doc->timestamp_format = strftime($settings['timestamp_format'] ? 
-									  $settings['timestamp_format'] : 
-									  $settings['date_time_format'],
-									  strtotime($doc->timestamp) );
+	$doc->timestamp_format = strftime(
+		$settings['timestamp_format'] ? $settings['timestamp_format'] : $settings['date_time_format'],
+		strtotime($doc->timestamp)
+	);
 
 	$timestamp = is_numeric($doc->timestamp) ? $doc->timestamp : strtotime($doc->timestamp);
 
-	$doc->timestamp_date_format = $timestamp ?
-		strftime($settings['timestamp_date_format'] ? 
-				 $settings['timestamp_date_format'] : 
-				 $settings['date_format'],
-				 $timestamp ) : '';
+	$doc->timestamp_date_format =
+		$timestamp
+		? strftime(
+			$settings['timestamp_date_format'] ? $settings['timestamp_date_format'] : $settings['date_format'],
+			$timestamp
+		)
+		: '';
 }
 
 // parse a document or file; meta=true doesn't parse/transform the body
@@ -183,13 +191,17 @@ function parse($name,$filename = null,$meta = false) {
 		list($key, $value) = preg_split('/\s*:\s*/', $line, 2);
 
 		switch ( $key ) {
+
 		case '' : continue 2; break;
+
 		case 'tags': $value = explode(' ', $value); break;
+
 		case 'timestamp': 
 			if ( !is_numeric($value) ) {
 				$value = strtotime($value);
 			}
 			break;
+
 		}
 
 		$doc->$key = $value;
@@ -235,10 +247,15 @@ function save_xattrs($filename,$doc) {
 
 	global $meta_keys, $xattr;
 	foreach ( $meta_keys as $key ) {
+
 		$value = $doc->{$key};
+
 		if ( $key == 'metatime' ) $value = time();
+
 		if ( $key == 'tags' && is_array($value)  ) $value = implode(' ', $value);
+
 		$xattr['xattr_set']->invoke($filename, 'geeklog.'.$key, $value );
+
 	}
 
 }
@@ -354,6 +371,7 @@ function search($params = array()) {
 		foreach ( $docs as $doc ) {
 
 			switch ($key) {
+
 			case 'has_timestamp':
 				if ( !is_numeric($doc->timestamp) )
 					continue 2;
@@ -403,6 +421,7 @@ function search($params = array()) {
 
 			case 'not_tag':
 				$value = array($value);
+
 			case 'not_tags':
 				$tags = is_array($value) ? $value : preg_split('/\s*,\s*/', $value);
 				foreach ( $tags as $tag ) {
@@ -444,6 +463,7 @@ function search($params = array()) {
 				break;
 			default:
 				array_push($will_sort,$doc);
+
 			}
 		}
 
