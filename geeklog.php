@@ -310,7 +310,7 @@ function transform_ratamarkup($text) {
 			$items = array();
 			if ( $ref->description ) array_push($items, 'title="'.html_pclean($ref->description).'"');
 
-			return "<a href=\"$href\"". implode(" ", $items) .">$text</a>";
+			return "<a href=\"$href\" ". implode(" ", $items) .">$text</a>";
 		}
 
 		return "<a href=\"$href\" rel=\"nofollow\">$text</a>";
