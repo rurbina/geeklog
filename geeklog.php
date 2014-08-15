@@ -304,7 +304,7 @@ function transform_ratamarkup($text) {
 			$ref = parse($href,null,true);
 
 			if ( $ref === null ) {
-				return "<span class=\"notfound\" href=\"$href\">$text</span>";
+				return "<span class=\"notfound\" data-href=\"$href\">$text</span>";
 			}
 
 			$items = array();
@@ -616,7 +616,7 @@ function block_doclist_table($acc,$tokens) {
 
 // inserts a line containing the string "<!-- break -->", for block_blog
 function block_break($acc,$tokens) {
-	return "<!-- break -->\n";
+	return "<!-- break -->\n<a name='break'/>\n";
 }
 
 // includes a file --- warning, it doesn't check for loops
