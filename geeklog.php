@@ -8,12 +8,13 @@ $settings = array(
 	'data_path'        => 'data',
 	'name_re'          => '/^([0-9a-z_-]*).*$/',
 	'404'              => '404',
-	'suffixes'         => array('.txt','.html'),
+	'suffixes'         => array('.txt','.html','.link'),
 	'transform'        => 'ratamarkup',
 	'template'         => 'template.php',
 	'date_time_format' => '%c',
 	'date_format'      => '%F',
 	'time_format'      => '%k:%M',
+	'max_recursion'    => 5,
 );
 
 @include_once("geeklog.config.php");
@@ -29,6 +30,7 @@ $meta_keys = array(
 	'timestamp',
 	'comment',
 	'revision',
+	'link',
 );
 
 // prepend the customized include path
@@ -130,7 +132,7 @@ function add_pretty_print_items(&$doc) {
 }
 
 // parse a document or file; meta=true doesn't parse/transform the body
-function parse($name,$filename = null,$meta = false) {
+function parse($name,$filename = null,$meta = false,$recursive = 0) {
 
 	global $settings;
 
@@ -159,6 +161,10 @@ function parse($name,$filename = null,$meta = false) {
 			if ( ! file_exists( $filename ) ) {
 				// not found
 				if ($meta) return null;
+				
+				// 404
+				if ( $settings['404'] && $recursive < $settings['max_recursion'] )
+					return parse( $settings['404'], null, null, $settings['max_recursion'] );
 				$doc->body = "<!-- file not found $filename -->\n";
 				return $doc;
 			}
@@ -205,6 +211,11 @@ function parse($name,$filename = null,$meta = false) {
 		}
 
 		$doc->$key = $value;
+	}
+
+	// if file is a link then we'll recurse
+	if ( $doc->link && $recursive < $settings['max_recursion'] ) {
+		return parse($doc->link,null,$meta,$recursive + 1);
 	}
 
 	// if we only want metadata then discard the contents
