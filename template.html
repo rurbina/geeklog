@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+  <title>@(hash-ref doc 'title)</title>
+  @when[(hash-has-key? doc 'keywords)]{
+  <meta name="keywords" content="@(xexpr->string (hash-ref doc 'keywords))">
+  }
+  @when[(hash-has-key? doc 'description)]{
+  <meta name="description" content="@(xexpr->string (hash-ref doc 'description))">
+  }
+  <link rel="stylesheet" href="/geekmx.css">
+</head>
+<body>
+  <span id="geekmxheader"><a href="index">GeekMX</a></span>
+  <div class="doc">
+    @(hash-ref doc 'body)
+  </div>
+</body>
+</html>
