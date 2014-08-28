@@ -406,6 +406,7 @@ function search($params = array()) {
 
 			case 'tag':
 				// this is a special case of or_tags containing only one
+			case 'or-tags':
 			case 'or_tags':
 				// docs containing any of these will match
 				if ( !is_array($doc->tags) ) continue 2;
@@ -418,6 +419,8 @@ function search($params = array()) {
 				}
 				continue 2;
 
+			case 'tags':
+			case 'and-tags':
 			case 'and_tags':
 				// docs containing all of these will match
 				if ( !is_array($doc->tags) ) continue 2;
@@ -590,6 +593,9 @@ function block_doclist_table($acc,$tokens) {
 	$fields = preg_split('/\s*,\s*/', $params['fields']);
 	$headers = preg_split('/\s*,\s*/', $params['headers'] ? $params['headers'] : $params['fields'] );
 	$widths = preg_split('/\s*,\s*/', $params['widths']);
+
+	foreach ( $fields as $k => $v )
+		$fields[$k] = strtr($v,"-","_");
 
 	if ( !is_array($widths) ) $widths = array();
 
