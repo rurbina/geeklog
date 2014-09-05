@@ -3,8 +3,11 @@
 (require "geeklog.rkt")
 (require racket/format)
 
-(geeklog-merge-settings (make-hash (list
-                                    '(data-path . "/home/rat/Dropbox/GeekMX/"))))
+(geeklog-merge-settings #hash([base-path . "/home/rat/src/geeklog"]
+                              [data-path . "geekmx"]))
+
+(geeklog-merge-settings #hash([base-path . "/home/rat/src/geeklog"]
+                              [data-path . "96grados"]))
 
 (map 
  (lambda (item) (printf "[31m== item [m\n~a\n" item))
