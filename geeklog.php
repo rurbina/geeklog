@@ -102,6 +102,7 @@ function add_pretty_print_items(&$doc) {
 	if ( !$doc->title ) $doc->title = $doc->name;
 
 	$a_title = html_pclean( $doc->description ? $doc->description : $doc->title );
+
 	$doc->title_link = "<a href=\"{$doc->name}\" title=\"$a_title\">".html_clean($doc->title)."</a>";
 
 	$doc->name_link = "<a href=\"{$doc->name}\" title=\"$a_title\">".html_clean($doc->name)."</a>";
@@ -129,6 +130,7 @@ function add_pretty_print_items(&$doc) {
 			$timestamp
 		)
 		: '';
+	$doc->timestamp_format_date = $doc->timestamp_date_format;
 }
 
 // parse a document or file; meta=true doesn't parse/transform the body
@@ -433,10 +435,12 @@ function search($params = array()) {
 				}
 				break;
 
+			case 'not-tag':
 			case 'not_tag':
 				$value = array($value);
 
 			case 'not_tags':
+			case 'not-tags':
 				$tags = is_array($value) ? $value : preg_split('/\s*,\s*/', $value);
 				foreach ( $tags as $tag ) {
 					if ( !is_array($doc->tags) ) break;
@@ -603,7 +607,8 @@ function block_doclist_table($acc,$tokens) {
 
 	foreach ( $headers as $h ) {
 		$w = array_shift($widths);
-		if ( $w ) $w = " width=\"$w\"";
+		if ( $w == "*" || $w == "" ) $w = "auto";
+		if ( $w ) $w = " style=\"width: $w\"";
 
 		$out .= "\t\t<th$w>$h</th>\n";
 	}
