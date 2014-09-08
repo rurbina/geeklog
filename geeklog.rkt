@@ -73,7 +73,7 @@
 (define default-settings
   (make-hash `([base-path         . "."]
                [data-path         . "data"]
-               [suffixes          . (".txt" "")]
+               [suffixes          . (".txt" ".link" "")]
                [template          . "template.html"]
                [404-doc           . "error-404"]
                [default-transform . ratamarkup]
@@ -83,7 +83,7 @@
                [format-date-time  . ,default-format-date-time])))
 
 (define site-settings
-  (make-hash '([default settings])))
+  (make-hash `([default . ,default-settings])))
 
 (ratamarkup-set!-link-callback
  (lambda (link #:options [options #hash()])
@@ -102,7 +102,9 @@
                                        [#px"[ñ]" "n"]))]
            [doc null])
        (unless (regexp-match? #px"^(http:|https:|)//" (first m))
-         (set! doc (load-doc docname #:headers-only #t #:settings (hash-ref options 'geeklog-settings default-settings))))
+         (set! doc 
+               (with-handlers ([exn:fail? (lambda (e) void)])
+                 (load-doc docname #:headers-only #t #:settings (hash-ref options 'geeklog-settings default-settings)))))
        (when (gldoc? doc)
          (let ([headers (gldoc-headers doc)])
            (set! href docname)
@@ -242,7 +244,8 @@
                                  #:no-future #t
                                  #:settings settings)])
       (let ([body (parse-body (gldoc-body doc)
-                              'ratamarkup
+                              (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
+                              #:options options
                               #:settings settings)]
             [top ""]
             [has-break #f]
@@ -305,26 +308,37 @@
                           #:tokens [tokens '()])
   "<!-- soundcloud -->\n\n")
 
+(define (rm-div text
+                 #:options [options (make-hash '((null . null)))]
+                 #:tokens  [tokens '()])
+  (format "<div class=\"~a\"~a>\n~a\n</div>\n\n"
+          (string-join (for/list ([token tokens]
+                                  #:when (eq? (cdr token) #t))
+                         (symbol->string (car token)))
+                       " ")
+          (for/fold ([items ""])
+                    ([token tokens]
+                     #:unless (eq? (cdr token) #t))
+            (string-append items (format " ~a=\"~a\"" (car token) (cdr token))))
+          (ratamarkup-process text #:options options)))
 
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
 (ratamarkup-add-section-processor 'doclist_table     rm-doclist-table)
 (ratamarkup-add-section-processor 'soundcloud_player rm-soundcloud)
+(ratamarkup-add-section-processor 'div               rm-div)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; takes a hash and merges it key-by-key with settings
-(define (merge-settings new-hash (site null))
-  (let ([settings null])
-    (if (eq? site null)
-        (set! settings default-settings)
-        (begin
-          (unless (hash-has-key? site-settings site)
-            (hash-set! site-settings site (make-hash (for/list ([key (hash-keys default-settings)])
-                                                       (cons key (hash-ref default-settings key))))))
-          (set! settings (hash-ref site-settings site))))
-    (for ([key (hash-keys new-hash)])
-      (hash-set! settings key (hash-ref new-hash key)))))
+(define (merge-settings new-hash [site 'default])
+  (unless (hash-has-key? site-settings site)
+    (hash-set! site-settings site (make-hash (for/list ([key (hash-keys default-settings)])
+                                               (cons key (hash-ref default-settings key))))))
+  (for ([key (hash-keys new-hash)])
+    (hash-set! (hash-ref site-settings site)
+               key
+               (hash-ref new-hash key))))
 
 ; search for documents
 (define (search-docs
@@ -345,10 +359,11 @@
                             (set! file-path (build-path data-path file))
                             ;;(load-doc (path->string file-path) #:headers-only headers-only))]
                             (with-handlers ([exn:fail? (lambda (e)
-                                                         (printf "\t\terror is ~v\n" e)
+                                                         (eprintf "\t\terror is ~v\n" e)
                                                          void)])
                               (load-doc (path->string file-path)
                                         #:path file-path
+                                        #:settings settings
                                         #:headers-only headers-only)))]
                      #:when (and [gldoc? doc]
                                  [or (empty? tags)
@@ -494,12 +509,17 @@
         [template-path null])
     (set! settings
           (cond [(hash-has-key? site-settings script) (hash-ref site-settings script)]
+                [(hash-has-key? site-settings (string->symbol (string-replace script ".rkt" "")))
+                 (hash-ref site-settings (string->symbol (string-replace script ".rkt" "")))]
                 [(and (hash-has-key? params 'config)
                       (hash-has-key? site-settings (string->symbol (hash-ref params 'config))))
                  (hash-ref site-settings (string->symbol (hash-ref params 'config)))]
-                 [else default-settings]))
+                 [else
+                  (eprintf "no settings for script ~v or for config ~v\n" script (hash-ref params 'config "(none)"))
+                  default-settings]))
     (unless (hash-has-key? params 'doc) (hash-set! params 'doc (hash-ref settings 'default-doc)))
-    (set! geekdoc (load-doc (hash-ref params 'doc (hash-ref settings 'default-doc)) #:settings settings))
+    (set! geekdoc (load-doc (hash-ref params 'doc (hash-ref settings 'default-doc))
+                            #:settings settings))
     (hash-set! doc 'title (hash-ref! (gldoc-headers geekdoc) 'title (hash-ref params 'doc)))
     (hash-set! doc 'body (gldoc-body geekdoc))
     (eval `(require web-server/templates) tns)
