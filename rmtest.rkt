@@ -1,7 +1,7 @@
 #lang racket
 
-(require "geeklog.rkt")
-(require racket/format)
+(require geeklog/geeklog
+         racket/format)
 
 (geeklog-merge-settings #hash([base-path . "/home/rat/src/geeklog"]
                               [data-path . "geekmx"]))
