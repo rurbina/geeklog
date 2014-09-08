@@ -18,7 +18,7 @@
          racket/list
          racket/date
          scribble/decode
-         (rename-in "ratamarkup.rkt" [ratamarkup ratamarkup-process]))
+         (rename-in ratamarkup/ratamarkup [ratamarkup ratamarkup-process]))
 
 (define (default-format-date epoch #:timezone [tz "UTC"])
   (let ([d (seconds->date epoch)]
