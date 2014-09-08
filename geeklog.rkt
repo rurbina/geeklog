@@ -385,12 +385,14 @@
                   #:path         [path null]
                   #:headers-only [nobody #f]
                   #:settings     [settings default-settings])
-  (let ([filename path] [whole ""] [doc null] [tmp null] [body null] [headers null])
+  (let ([filename path] [whole ""] [doc null] [tmp null] [body null] [headers null] [search-path null])
+    (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
     (when (path? path) (set! name (last (explode-path path))))
     (when (null? filename) (set! filename "non-existing-file"))
     (for ([suffix (hash-ref settings 'suffixes)]
           #:break (file-exists? filename))
-      (set! filename (build-path (hash-ref settings 'data-path) (string-append name suffix))))
+      (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix))))
+    (unless (file-exists? filename) (error (format "document ~v not found in ~v" name search-path)))
     (set! whole (file->string filename))
     (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
     (set! headers (parse-headers (first tmp) #:filename filename #:settings settings))
@@ -488,7 +490,8 @@
         [tns (make-base-namespace)]
         [geekdoc null]
         [script (path/param-path (first (url-path (request-uri req))))]
-        [settings null])
+        [settings null]
+        [template-path null])
     (set! settings
           (cond [(hash-has-key? site-settings script) (hash-ref site-settings script)]
                 [(and (hash-has-key? params 'config)
@@ -505,7 +508,10 @@
     (namespace-set-variable-value! 'gldoc-body gldoc-body #f tns)
     (namespace-set-variable-value! 'load-doc (lambda (name) (load-doc name #:settings settings)) #f tns)
     (namespace-set-variable-value! 'default-settings settings #f tns)
-    (set! out-template (eval `(include-template ,(hash-ref settings 'template)) tns))
+    ;; template path must be relative, don't ask me why
+    (set! template-path (build-path (hash-ref settings 'base-path ".") (hash-ref settings 'template)))
+    (set! template-path (find-relative-path (current-directory) template-path))
+    (set! out-template (eval `(include-template ,(path->string template-path)) tns))
     (response/full
      200 #"OK"
      (current-seconds) TEXT/HTML-MIME-TYPE

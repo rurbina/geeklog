@@ -11,10 +11,11 @@
    "geekmx.rkt")
 
   (geeklog-merge-settings 
-   (make-hash `([base-path . "96grados"]
-                [data-path . "96grados"]
+   (make-hash `([base-path . "/www/96grados"]
+                [data-path . "docs"]
                 [suffixes  . (".txt" ".link" "")]
                 [template  . "96grados.s-html"]))
    "96g.rkt"))
 
-(geeklog #:data-path ".")
+(geeklog #:path "/www"
+         #:data-path "omg")
