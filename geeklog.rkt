@@ -240,7 +240,7 @@
                                  #:sort      'timestamp
                                  #:reverse   #t
                                  #:no-future #t
-                                 #:data-path (hash-ref settings 'data-path))])
+                                 #:settings settings)])
       (let ([body (parse-body (gldoc-body doc)
                               'ratamarkup
                               #:settings settings)]
@@ -248,7 +248,6 @@
             [has-break #f]
             [footer ""]
             [break ""])
-        (printf "[33m@rm-blog[m: parsing ~v\n" (hash-ref (gldoc-headers doc) 'name))
         (if (regexp-match #px"<!-- break -->" body)
             (begin
               (set! top (regexp-replace #px"(?s:<!-- break -->.*$)" body ""))
@@ -283,15 +282,11 @@
                 'fields  (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'fields "name"))
                 'headers (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'headers "Item"))
                 'widths  (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'widths "auto")))
-    (printf "rm-doclist-table search options: ~v\n" search-options)
     (set! docs (search-docs #:tags      (hash-ref search-options 'tags)
                             #:no-tags   (hash-ref search-options 'no-tags)
                             #:or-tags   (hash-ref search-options 'or-tags)
                             #:sort      (hash-ref search-options 'sort)
-                            #:data-path (hash-ref
-                                         (hash-ref options 'geeklog-settings
-                                                   default-settings)
-                                         'data-path)))
+                            #:settings  (hash-ref options 'geeklog-settings default-settings)))
     (if (empty? docs)
         (ratamarkup-process "No se encontraron documentos." #:options options)
         (html-table-render
@@ -332,15 +327,18 @@
       (hash-set! settings key (hash-ref new-hash key)))))
 
 ; search for documents
-(define (search-docs #:tags            [tags         '()]
-                     #:or-tags         [or-tags      '()]
-                     #:no-tags         [no-tags      '()]
-                     #:headers-only    [headers-only #t]
-                     #:sort            [sort-key     'name]
-                     #:reverse         [sort-reverse #f]
-                     #:no-future       [no-future    #f]
-                     #:settings        [settings     default-settings]
-                     #:data-path       [data-path    (hash-ref default-settings 'data-path)])
+(define (search-docs
+         #:tags            [tags         '()]
+         #:or-tags         [or-tags      '()]
+         #:no-tags         [no-tags      '()]
+         #:headers-only    [headers-only #t]
+         #:sort            [sort-key     'name]
+         #:reverse         [sort-reverse #f]
+         #:no-future       [no-future    #f]
+         #:settings        [settings     default-settings]
+         #:data-path       [data-path    null])
+  (when (null? data-path)
+    (set! data-path (string->path (string-append (hash-ref settings 'base-path) "/" (hash-ref settings 'data-path)))))
   (let ([results '()] [file-path null] [now (current-seconds)])
     (set! results
           (for/list ([doc (for/list ([file (directory-list data-path)])
@@ -349,7 +347,9 @@
                             (with-handlers ([exn:fail? (lambda (e)
                                                          (printf "\t\terror is ~v\n" e)
                                                          void)])
-                              (load-doc (path->string file-path) #:headers-only headers-only)))]
+                              (load-doc (path->string file-path)
+                                        #:path file-path
+                                        #:headers-only headers-only)))]
                      #:when (and [gldoc? doc]
                                  [or (empty? tags)
                                      (subset? tags (hash-ref (gldoc-headers doc) 'tags '()))]
@@ -375,15 +375,19 @@
 
 (define (parse-body text
                     transform-type
-                    #:settings [settings default-settings])
-  ((hash-ref transforms transform-type) text #:settings settings))
+                    #:settings [settings default-settings]
+                    #:options [options #hash()])
+  ((hash-ref transforms transform-type) text #:settings settings #:options (make-hash `((geeklog-settings . ,settings)))))
 
 
 ; load a geeklog document, which is basically headers\n\nbody
 (define (load-doc name
-                  #:headers-only (nobody #f)
-                  #:settings     (settings default-settings))
-  (let ([filename "non-existing-file"] [whole ""] [doc null] [tmp null] [body null] [headers null])
+                  #:path         [path null]
+                  #:headers-only [nobody #f]
+                  #:settings     [settings default-settings])
+  (let ([filename path] [whole ""] [doc null] [tmp null] [body null] [headers null])
+    (when (path? path) (set! name (last (explode-path path))))
+    (when (null? filename) (set! filename "non-existing-file"))
     (for ([suffix (hash-ref settings 'suffixes)]
           #:break (file-exists? filename))
       (set! filename (build-path (hash-ref settings 'data-path) (string-append name suffix))))
