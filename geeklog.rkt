@@ -1,7 +1,6 @@
 #lang racket
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; geeklog implementation in lisp
+#| geeklog.rkt https://github.com/rurbina/geeklog |#
 
 (provide geeklog
          (rename-out [load-doc          geeklog-load-doc]
@@ -18,7 +17,20 @@
          racket/list
          racket/date
          scribble/decode
-         (rename-in ratamarkup/ratamarkup [ratamarkup ratamarkup-process]))
+         (rename-in ratamarkup/ratamarkup
+                    [ratamarkup ratamarkup-process]))
+
+;;; settings
+
+;; takes a hash and merges it key-by-key with settings
+(define (merge-settings new-hash [site 'default])
+  (unless (hash-has-key? site-settings site)
+    (hash-set! site-settings site (make-hash (for/list ([key (hash-keys default-settings)])
+                                               (cons key (hash-ref default-settings key))))))
+  (for ([key (hash-keys new-hash)])
+    (hash-set! (hash-ref site-settings site)
+               key
+               (hash-ref new-hash key))))
 
 (define (default-format-date epoch #:timezone [tz "UTC"])
   (let ([d (seconds->date epoch)]
@@ -85,6 +97,8 @@
 (define site-settings
   (make-hash `([default . ,default-settings])))
 
+;;; ratamarkup customizations
+
 (ratamarkup-set!-link-callback
  (lambda (link #:options [options #hash()])
    (let ([m (flatten (regexp-match* "^\\[\\[(.*)?(?<!\\\\)\\|(.*?)(?<!\\\\)\\|(.*?)]]$"
@@ -120,66 +134,6 @@
                  params
                  text))))))
 
-(define (transform-ratamarkup text
-                              #:settings [settings default-settings]
-                              #:options [options (make-hash `((geeklog-settings . ,default-settings)))])
-  (unless (eq? settings default-settings)
-    (hash-set! options 'geeklog-settings settings))
-  (ratamarkup-process text #:options options))
-
-(define transforms (make-hash `([ratamarkup . ,transform-ratamarkup])))
-
-(struct gldoc (headers body))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ratamarkup expansion stuff
-
-;; structures for the table renderer
-(struct html-table (rows options))
-(struct html-table-row (cells))
-(struct html-table-row-header html-table-row (header))
-(struct html-table-cell (content))
-(struct html-table-cell-style html-table-cell (style))
-
-;; the table renderer
-(define (html-table-render [table html-table?]
-                      #:widths [widths '()]
-                      #:class [class "orgtbl"]
-                      #:process [procfn (lambda (t) t)]
-                      #:first-row-header [frh #t])
-  (let ([row-num 0] [cell-num 0])
-    (string-join
-     (for/list ([row (html-table-rows table)])
-       (set! row-num (add1 row-num))
-       (set! cell-num 0)
-       (string-join
-        (for/list ([cell (if (html-table-row? row) (html-table-row-cells row) row)])
-          (set! cell-num (add1 cell-num))
-          (format
-           (if (or [and frh (= row-num 1)]
-                   [and (html-table-row-header? row) (html-table-row-header-header row)])
-               "<th~a>~a</th>"
-               "<td~a>~a</td>")
-           (cond [(html-table-cell-style? cell)
-                  (format " style=\"~a\"" (html-table-cell-style cell))]
-                 [(>= (length widths) cell-num)
-                  (format " style=\"width:~a\""
-                          (regexp-replace
-                           #px"^\\s*\\*\\s*$|^\\s*$"
-                           (car (drop widths (sub1 cell-num)))
-                           "auto"))]
-                 [else " data-nostylegiven=\"1\""])
-           (procfn (regexp-replace* #px"^\\s+|\\|\\s*|\\s*$|\\s*\\|\\s*$"
-                                    (if (html-table-cell? cell)
-                                        (html-table-cell-content cell)
-                                        cell)
-                                    ""))))
-        "\n\t\t"))
-     "\n\t</tr>\n\t<tr>\n\t\t"
-     #:before-first "\n<table>\n\t<tr>\n\t\t"
-     #:after-last "\n\t</tr>\n</table>\n\n")))
-
-;; TODO: some options?
 (define (rm-orgtbl text
                    #:options [options #hash()]
                    #:tokens [tokens '()])
@@ -322,25 +276,125 @@
             (string-append items (format " ~a=\"~a\"" (car token) (cdr token))))
           (ratamarkup-process text #:options options)))
 
+(define (rm-entry text
+                  #:options [options (make-hash '((null . null)))]
+                  #:tokens  [tokens '()])
+  (let ([hdr (hashify-tokens tokens)])
+    (if (subset? (hash-keys hdr) '(author timestamp title))
+        (format "<article class=\"entry\">\n<header>\n<h1>~a</h1>\n</header>\n~a\n</article>\n\n"
+                ((hash-ref (hash-ref options 'geeklog-settings default-settings)
+                          'format-date)
+                 (parse-timestamp (hash-ref hdr 'timestamp) 0))
+                (ratamarkup-process text #:options options))
+        (format "<!-- §entry error: all these headers are required: author, timestamp -->\n\n"))))
+                  
+(define (rm-include text
+                    #:options [options (make-hash '((null . null)))]
+                    #:tokens  [tokens '()])
+  (let ([opts (hashify-tokens tokens)])
+    (cond [(> (hash-ref options 'geeklog-recursion 0) 1)
+           (format "<!-- §include error: recursion level exceeded -->\n\n")]
+          [(not (hash-has-key? opts 'name))
+           (format "<!-- §include usage: § include name=docname § -->\n\n")]
+          [else
+           (hash-set! options 'geeklog-recursion
+                      (add1 (hash-ref options 'geeklog-recursion 0)))
+           (let ([doc (load-doc (hash-ref opts 'name)
+                                #:headers-only #t
+                                #:settings (hash-ref options 'geeklog-settings default-settings))])
+             (let ([body (parse-body (gldoc-body doc)
+                                             (hash-ref (gldoc-headers doc) 'transform null)
+                                             #:settings (hash-ref options 'geeklog-settings default-settings)
+                                             #:options options)])
+               (string-join (list (format "<!-- §include : ~a -->" (hash-ref (gldoc-headers doc) 'title))
+                                  (when (hash-has-key? opts 'aside)
+                                    (format "<aside class=\"include~a\">"
+                                            (string-join (flatten (list (hash-ref opts 'class)))
+                                                         " "
+                                                         #:before-first " ")))
+                                  (when (hash-has-key? opts 'title)
+                                    (format "<header><h1>~a</h1></header>" (hash-ref opts 'title)))
+                                  body
+                                  (when (hash-has-key? opts 'aside) "</aside>"))
+                            "\n"
+                            #:after-last "\n")))])))
+
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
 (ratamarkup-add-section-processor 'doclist_table     rm-doclist-table)
 (ratamarkup-add-section-processor 'soundcloud_player rm-soundcloud)
 (ratamarkup-add-section-processor 'div               rm-div)
+(ratamarkup-add-section-processor 'entry             rm-entry)
+(ratamarkup-add-section-processor 'include           rm-include)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; transform modes
 
-; takes a hash and merges it key-by-key with settings
-(define (merge-settings new-hash [site 'default])
-  (unless (hash-has-key? site-settings site)
-    (hash-set! site-settings site (make-hash (for/list ([key (hash-keys default-settings)])
-                                               (cons key (hash-ref default-settings key))))))
-  (for ([key (hash-keys new-hash)])
-    (hash-set! (hash-ref site-settings site)
-               key
-               (hash-ref new-hash key))))
+(define (transform-ratamarkup text
+                              #:settings [settings default-settings]
+                              #:options [options (make-hash `((geeklog-settings . ,default-settings)))])
+  (unless (eq? settings default-settings)
+    (hash-set! options 'geeklog-settings settings))
+  (ratamarkup-process text #:options options))
 
-; search for documents
+(define transforms (make-hash `([ratamarkup . ,transform-ratamarkup])))
+
+;;; table rendering utility function
+
+(struct html-table (rows options))
+(struct html-table-row (cells))
+(struct html-table-row-header html-table-row (header))
+(struct html-table-cell (content))
+(struct html-table-cell-style html-table-cell (style))
+
+(define (html-table-render [table html-table?]
+                      #:widths [widths '()]
+                      #:class [class "orgtbl"]
+                      #:process [procfn (lambda (t) t)]
+                      #:first-row-header [frh #t])
+  (let ([row-num 0] [cell-num 0])
+    (string-join
+     (for/list ([row (html-table-rows table)])
+       (set! row-num (add1 row-num))
+       (set! cell-num 0)
+       (string-join
+        (for/list ([cell (if (html-table-row? row) (html-table-row-cells row) row)])
+          (set! cell-num (add1 cell-num))
+          (format
+           (if (or [and frh (= row-num 1)]
+                   [and (html-table-row-header? row) (html-table-row-header-header row)])
+               "<th~a>~a</th>"
+               "<td~a>~a</td>")
+           (cond [(html-table-cell-style? cell)
+                  (format " style=\"~a\"" (html-table-cell-style cell))]
+                 [(>= (length widths) cell-num)
+                  (format " style=\"width:~a\""
+                          (regexp-replace
+                           #px"^\\s*\\*\\s*$|^\\s*$"
+                           (car (drop widths (sub1 cell-num)))
+                           "auto"))]
+                 [else " data-nostylegiven=\"1\""])
+           (procfn (regexp-replace* #px"^\\s+|\\|\\s*|\\s*$|\\s*\\|\\s*$"
+                                    (if (html-table-cell? cell)
+                                        (html-table-cell-content cell)
+                                        cell)
+                                    ""))))
+        "\n\t\t"))
+     "\n\t</tr>\n\t<tr>\n\t\t"
+     #:before-first "\n<table>\n\t<tr>\n\t\t"
+     #:after-last "\n\t</tr>\n</table>\n\n")))
+
+;;; utility functions
+
+;; turn a list of tokens into a hash
+(define (hashify-tokens tokens)
+  (for/hash ([token tokens])
+    (values (car token) (cdr token))))
+
+;;; documents
+
+(struct gldoc (headers body))
+
+;; search for documents
 (define (search-docs
          #:tags            [tags         '()]
          #:or-tags         [or-tags      '()]
@@ -380,6 +434,7 @@
     (set! results (sort results (lambda (a b) (gldoc-sort a b sort-key))))
     (if sort-reverse (reverse results) results)))
 
+;; gldoc sorting function
 (define (gldoc-sort a b key)
   (let ([dk (lambda (doc key) (hash-ref (gldoc-headers doc) key
                                        (hash-ref (gldoc-headers doc) 'name)))])
@@ -388,14 +443,16 @@
       (cond [(and (number? ka) (number? kb)) (< ka kb)]
             [else (string<? ka kb)]))))
 
+;; parse a body of text (dispatches transforms)
 (define (parse-body text
                     transform-type
                     #:settings [settings default-settings]
-                    #:options [options #hash()])
-  ((hash-ref transforms transform-type) text #:settings settings #:options (make-hash `((geeklog-settings . ,settings)))))
+                    #:options [options null])
+  (when (null? options)
+    (set! options (make-hash `((geeklog-settings . ,settings)))))
+  ((hash-ref transforms transform-type) text #:settings settings #:options options))
 
-
-; load a geeklog document, which is basically headers\n\nbody
+;; load a geeklog document, which is basically headers\n\nbody
 (define (load-doc name
                   #:path         [path null]
                   #:headers-only [nobody #f]
@@ -428,8 +485,7 @@
           extra
           (if (string=? text "") href text)))
 
-
-; parse a geeklog document headers
+;; parse a geeklog document headers
 (define (parse-headers text
                        #:filename [filename ""]
                        #:settings [settings default-settings])
@@ -497,6 +553,24 @@
      'timestamp-format-date-time ((hash-ref settings 'format-date-time) (hash-ref headers 'timestamp)))
     headers))
 
+(define (parse-timestamp ts (default 0))
+  (cond [(regexp-match? #px"^\\s*(\\d+)\\s*$" ts) (string->number ts)]
+        [(regexp-match? #px"\\d{4}.\\d{2}.\\d{2}" ts)
+         (let ([m (regexp-match
+                   #px"(\\d{4}).(\\d{2}).(\\d{2})\\s*T?((\\d+):?(\\d+)?:?(\\d+)?(\\s*([AaPp][Mm]))?)?"
+                   ts)]
+               [convert (lambda (i) (if (string? i) (or (string->number i) 0) 0))]
+               [d null])
+           (find-seconds (convert (eighth m)) ;second
+                         (convert (seventh m)) ;minute
+                         (convert (sixth m)) ;hour
+                         (string->number (fourth m)) ;day
+                         (string->number (third m)) ;month
+                         (string->number (second m)) ;year
+                         #t ;localtime
+                         ))]
+        [else default]))
+
 ;; servlet processing thread
 (define (geeklog-servlet req)
   (let ([params (make-hash (url-query (request-uri req)))]
@@ -537,8 +611,6 @@
      (current-seconds) TEXT/HTML-MIME-TYPE
      empty
      (list (string->bytes/utf-8 out-template)))))
-     ;(list (string->bytes/utf-8 (include-template (hash-ref settings 'template)))))))
-     ;(list (string->bytes/utf-8 (include-template "template.html"))))))
 
 ;; launch the servlet
 (define (geeklog
