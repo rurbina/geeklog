@@ -116,7 +116,7 @@
                                        [#px"[ñ]" "n"]))]
            [doc null])
        (unless (regexp-match? #px"^(http:|https:|)//" (first m))
-         (set! doc 
+         (set! doc
                (with-handlers ([exn:fail? (lambda (e) void)])
                  (load-doc docname #:headers-only #t #:settings (hash-ref options 'geeklog-settings default-settings)))))
        (when (gldoc? doc)
@@ -189,14 +189,19 @@
 (define (rm-blog text
                  #:options [options (make-hash '((null . null)))]
                  #:tokens  [tokens '()])
-  (let ([settings (hash-ref options 'geeklog-settings default-settings)])
+  (let ([settings (hash-ref options 'geeklog-settings default-settings)]
+        [blog-options (hashify-tokens tokens
+                                      #:symbolic-keys '(tags no-tags sort)
+                                      #:scalar-keys   '(sort future reverse level no-past))])
+    (printf "blog options: ~v\n" blog-options)
     (for/fold ([output ""])
-              ([doc (search-docs #:tags      '(blog)
-                                 #:no-tags   '(draft)
-                                 #:sort      'timestamp
-                                 #:reverse   #t
-                                 #:no-future #t
-                                 #:settings settings)])
+              ([doc (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
+                                 #:no-tags    (hash-ref blog-options 'no-tags '(draft))
+                                 #:sort       (hash-ref blog-options 'sort 'timestamp)
+                                 #:reverse    (if (hash-has-key? blog-options 'reverse) #f #t)
+                                 #:no-future  (if (hash-has-key? blog-options 'future) #f #t)
+                                 #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
+                                 #:settings   settings)])
       (let ([body (parse-body (gldoc-body doc)
                               (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
                               #:options options
@@ -204,13 +209,14 @@
             [top ""]
             [has-break #f]
             [footer ""]
+            [level (hash-ref blog-options 'level "2")]
             [break ""])
         (if (regexp-match #px"<!-- break -->" body)
             (begin
               (set! top (regexp-replace #px"(?s:<!-- break -->.*$)" body ""))
               (set! has-break #t))
             (set! top body))
-        (set! top (regexp-replace* #px"<(/?)h1>" top "<\\1h2>"))
+        (set! top (regexp-replace* #px"<(/?)h1>" top (format "<\\1h~a>" level)))
         (when has-break (set! break (format "<p class=\"blog_break\">~a</p>\n\n"
                                             ((hash-ref (gldoc-headers doc) 'link-format) "Leer el resto"))))
         (set! footer (format "<p class=\"blog_footer\"><i>~a por ~a</i> [~a]</p>\n"
@@ -287,7 +293,7 @@
                  (parse-timestamp (hash-ref hdr 'timestamp) 0))
                 (ratamarkup-process text #:options options))
         (format "<!-- §entry error: all these headers are required: author, timestamp -->\n\n"))))
-                  
+
 (define (rm-include text
                     #:options [options (make-hash '((null . null)))]
                     #:tokens  [tokens '()])
@@ -386,9 +392,24 @@
 ;;; utility functions
 
 ;; turn a list of tokens into a hash
-(define (hashify-tokens tokens)
+(define (hashify-tokens tokens
+                        #:symbolic-keys [symkeys '()]
+                        #:scalar-keys   [scalar '()])
   (for/hash ([token tokens])
-    (values (car token) (cdr token))))
+    (let ([key (car token)] [val (cdr token)])
+      (values 
+       key
+       (cond [(set-member? scalar key)
+              (if (set-member? symkeys key)
+                  (string->symbol val)
+                  val)]
+             [(set-member? symkeys key)
+              (cond [(boolean? val) val]
+                    [{and (string? val) (string=? val "")} null]
+                    [else (for/list ([item (regexp-split #px"\\s*,\\s*" val)]
+                                     #:unless (string=? item ""))
+                            (string->symbol item))])]
+             [else val])))))
 
 ;;; documents
 
@@ -403,13 +424,16 @@
          #:sort            [sort-key     'name]
          #:reverse         [sort-reverse #f]
          #:no-future       [no-future    #f]
+         #:older-than      [before-secs  0]
+         #:newer-than      [after-secs   0]
          #:settings        [settings     default-settings]
          #:data-path       [data-path    null])
   (when (null? data-path)
     (set! data-path (string->path (string-append (hash-ref settings 'base-path) "/" (hash-ref settings 'data-path)))))
   (let ([results '()] [file-path null] [now (current-seconds)])
     (set! results
-          (for/list ([doc (for/list ([file (directory-list data-path)])
+          (for/list ([doc (for/list ([file (directory-list data-path)]
+                                     #:when (file-exists? (build-path data-path file)))
                             (set! file-path (build-path data-path file))
                             ;;(load-doc (path->string file-path) #:headers-only headers-only))]
                             (with-handlers ([exn:fail? (lambda (e)
@@ -426,8 +450,12 @@
                                      (not (empty? (set-intersect or-tags (hash-ref (gldoc-headers doc) 'tags '()))))]
                                  [or (empty? no-tags)
                                      (not (subset? no-tags (hash-ref (gldoc-headers doc) 'tags '())))]
-                                 [or (< (hash-ref (gldoc-headers doc) 'timestamp (+ now 1)) now)
+                                 [or (< (hash-ref (gldoc-headers doc) 'timestamp (add1 now)) now)
                                      (not no-future)]
+                                 [or (= before-secs 0)
+                                     (< (hash-ref (gldoc-headers doc) 'timestamp before-secs) before-secs)]
+                                 [or (= after-secs 0)
+                                     (> (hash-ref (gldoc-headers doc) 'timestamp after-secs) after-secs)]
                                  #t))
             doc))
     ;; sorting
@@ -580,7 +608,8 @@
         [geekdoc null]
         [script (path/param-path (first (url-path (request-uri req))))]
         [settings null]
-        [template-path null])
+        [template-path null]
+        [cpu null] [real null] [gc null])
     (set! settings
           (cond [(hash-has-key? site-settings script) (hash-ref site-settings script)]
                 [(hash-has-key? site-settings (string->symbol (string-replace script ".rkt" "")))
@@ -591,12 +620,18 @@
                  [else
                   (eprintf "no settings for script ~v or for config ~v\n" script (hash-ref params 'config "(none)"))
                   default-settings]))
+    (hash-set! settings 'recursion-depth (add1 (hash-ref settings 'recursion-depth 1)))
     (unless (hash-has-key? params 'doc) (hash-set! params 'doc (hash-ref settings 'default-doc)))
-    (set! geekdoc (load-doc (hash-ref params 'doc (hash-ref settings 'default-doc))
+    (set!-values (geekdoc cpu real gc)
+          (time-apply
+           (lambda (n) (load-doc (hash-ref params 'doc (hash-ref settings 'default-doc))
                             #:settings settings))
+           '(1)))
+    (set! geekdoc (first geekdoc))
     (hash-set! doc 'title (hash-ref! (gldoc-headers geekdoc) 'title (hash-ref params 'doc)))
     (hash-set! doc 'body (gldoc-body geekdoc))
     (eval `(require web-server/templates) tns)
+    (namespace-set-variable-value! 'timing (list cpu real gc) #f tns)
     (namespace-set-variable-value! 'doc doc #f tns)
     (namespace-set-variable-value! 'gldoc gldoc #f tns)
     (namespace-set-variable-value! 'gldoc-body gldoc-body #f tns)
