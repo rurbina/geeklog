@@ -193,7 +193,6 @@
         [blog-options (hashify-tokens tokens
                                       #:symbolic-keys '(tags no-tags sort)
                                       #:scalar-keys   '(sort future reverse level no-past))])
-    (printf "blog options: ~v\n" blog-options)
     (for/fold ([output ""])
               ([doc (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
                                  #:no-tags    (hash-ref blog-options 'no-tags '(draft))
