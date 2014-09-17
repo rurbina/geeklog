@@ -266,7 +266,27 @@
 (define (rm-soundcloud text
                           #:options [options (make-hash '((null . null)))]
                           #:tokens [tokens '()])
-  "<!-- soundcloud -->\n\n")
+  (let ([opts (hashify-tokens tokens
+                              #:defaults '([width  "100%"]
+                                           [height "450"]
+                                           [style  "float:right;width:45%"]))])
+    (format (string-append "<iframe class=\"soundcloud_player ~a\" "
+                           "width=\"~a\" "
+                           "height=\"~a\" "
+                           "scrolling=\"no\" frameborder=\"no\" "
+                           "src=\"~a\" "
+                           "style=\"~a\"></iframe>\n")
+            (hash-ref opts 'class "")
+            (hash-ref opts 'width "100%")
+            (hash-ref opts 'height "450")
+            (cond [(hash-has-key? opts 'playlist)
+                   (format (string-append 
+                            "https://w.soundcloud.com/player/?"
+                            "url=https%3A//api.soundcloud.com/playlists/~a"
+                            "&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true"
+                            "&amp;show_user=true&amp;show_reposts=false&amp;visual=false")
+                           (hash-ref opts 'playlist))])
+            (hash-ref opts 'style ""))))
 
 (define (rm-div text
                  #:options [options (make-hash '((null . null)))]
@@ -325,6 +345,25 @@
                             "\n"
                             #:after-last "\n")))])))
 
+(define (rm-4shared-audio text
+                          #:options [options (make-hash '((null . null)))]
+                          #:tokens  [tokens '()])
+  (let ([opts (hashify-tokens tokens)])
+    (cond [(hash-has-key? opts 'folder)
+           (format 
+            (string-append "<!-- 4shared-audio -->\n"
+                           "<iframe src='http://www.4shared.com/web/embed/audio/folder/~a"
+                           "?type=~a"
+                           "&widgetWidth=300&widgetHeight=210&showPlaylist=true&playlistHeight=150"
+                           "&widgetRid=252956435456' "
+                           "style='overflow:hidden;height:210px;width:300px;border: 0;margin:0;~a'></iframe>"
+                           "\n\n")
+            (hash-ref opts 'folder)
+            "MINI"
+            (hash-ref opts 'style ""))]
+          [else "<!-- 4shared-audio: required folder param -->\n\n"])))
+                 
+
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
 (ratamarkup-add-section-processor 'doclist_table     rm-doclist-table)
@@ -332,6 +371,7 @@
 (ratamarkup-add-section-processor 'div               rm-div)
 (ratamarkup-add-section-processor 'entry             rm-entry)
 (ratamarkup-add-section-processor 'include           rm-include)
+(ratamarkup-add-section-processor '4shared-audio     rm-4shared-audio)
 
 ;;; transform modes
 
@@ -393,6 +433,7 @@
 
 ;; turn a list of tokens into a hash
 (define (hashify-tokens tokens
+                        #:defaults      [defaults '()]
                         #:symbolic-keys [symkeys '()]
                         #:scalar-keys   [scalar '()])
   (for/hash ([token tokens])
