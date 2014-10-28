@@ -172,7 +172,7 @@
                    (html-table-row (for/list ([cell-list row-cells-list])
                                      (html-table-cell
                                       (ratamarkup-process
-                                       (regexp-replace* #px"(?<!\\\\)\\\\vert" (string-join cell-list "\n") "|")
+                                       (string-join cell-list "\n")
                                        #:options options))))))
                ;; and this one for normal row-per-line tables
                (for/list ([line (string-split text "\n")]
@@ -181,7 +181,9 @@
                   (for/list ([cell (regexp-split #px"(?<!^|\\\\)\\|(?!\\s*$)" line)])
                     (html-table-cell
                      (ratamarkup-inline
-                      (regexp-replace* #px"^\\s*\\|\\s*|\\s*$|\\s*\\|\\s*$" cell "")
+		      (regexp-replace* #px"(?<!\\\\)\\\\vert"
+				       (regexp-replace* #px"^\\s*\\|\\s*|\\s*$|\\s*\\|\\s*$" cell "")
+				       "|")
                       #:options options))))))
            '()))
     (html-table-render table #:widths (regexp-split #px"\\s*,\\s*" (hash-ref topts 'widths "")))))
