@@ -172,7 +172,7 @@
                    (html-table-row (for/list ([cell-list row-cells-list])
                                      (html-table-cell
                                       (ratamarkup-process
-                                       (string-join cell-list "\n")
+                                       (regexp-replace* #px"(?<!\\)\\vert" (string-join cell-list "\n") "|")
                                        #:options options))))))
                ;; and this one for normal row-per-line tables
                (for/list ([line (string-split text "\n")]
