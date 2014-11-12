@@ -677,6 +677,7 @@
     (namespace-set-variable-value! 'doc doc #f tns)
     (namespace-set-variable-value! 'gldoc gldoc #f tns)
     (namespace-set-variable-value! 'gldoc-body gldoc-body #f tns)
+    (namespace-set-variable-value! 'headers (gldoc-headers geekdoc) #f tns)
     (namespace-set-variable-value! 'load-doc (lambda (name) (load-doc name #:settings settings)) #f tns)
     (namespace-set-variable-value! 'default-settings settings #f tns)
     ;; template path must be relative, don't ask me why
