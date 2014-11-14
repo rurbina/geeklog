@@ -560,6 +560,11 @@
                        #:filename [filename ""]
                        #:settings [settings default-settings])
   (let ([lines (regexp-split #px"\n" text)] [headers (make-hash)])
+    ;; set site presets if applyable
+    (when (hash-has-key? settings 'default-headers)
+      (for ([pair (hash-ref settings 'default-headers)])
+        (hash-set! headers (car pair) (cdr pair))))
+    ;; load headers from file
     (map (lambda (line)
            (let ([matches null])
              (set!-values (matches) (flatten
@@ -569,14 +574,16 @@
                                         #:match-select cdr)))
              (hash-set! headers (string->symbol (first matches)) (last matches))))
          lines)
-    ;; some defaults
+    ;; some magic for booleans
+    (for ([key (hash-keys headers)])
+      (let ([value (hash-ref headers key)])
+        (when (string? value)
+          (when (string=? value "#t") (hash-set! headers key #t))
+          (when (string=? value "#f") (hash-set! headers key #f)))))
+    ;; these should always exist
     (for ([key '(title author tags keywords description comment)])
       (unless (hash-has-key? headers key) (hash-set! headers key "")))
-    ;; set site presets if applyable
-    (when (hash-has-key? settings 'default-headers)
-      (for ([pair (hash-ref settings 'default-headers)])
-        (hash-set! headers (car pair) (cdr pair))))
-    ;;(eprintf "\theaders so far: ~v\n" headers)
+    (eprintf "\theaders so far: ~v\n" headers)
     ;; some transforms
     (hash-set*! headers
                 'tags (for/list ([tag (regexp-split #px"\\s+" (hash-ref headers 'tags ""))]
