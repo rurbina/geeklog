@@ -583,7 +583,7 @@
     ;; these should always exist
     (for ([key '(title author tags keywords description comment)])
       (unless (hash-has-key? headers key) (hash-set! headers key "")))
-    (eprintf "\theaders so far: ~v\n" headers)
+    ;; (eprintf "\theaders so far: ~v\n" headers)
     ;; some transforms
     (hash-set*! headers
                 'tags (for/list ([tag (regexp-split #px"\\s+" (hash-ref headers 'tags ""))]
