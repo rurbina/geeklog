@@ -572,7 +572,8 @@
                                         #px"(?m:^(.*?)\\s*:\\s*(.*)\\s*$)"
                                         line
                                         #:match-select cdr)))
-             (hash-set! headers (string->symbol (first matches)) (last matches))))
+             (unless (empty? matches)
+                 (hash-set! headers (string->symbol (first matches)) (last matches)))))
          lines)
     ;; some magic for booleans
     (for ([key (hash-keys headers)])
