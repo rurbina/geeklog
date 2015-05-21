@@ -295,15 +295,19 @@
   (let ([opts (hashify-tokens tokens
                               #:defaults '([width  "200"]
                                            [height "350"]
+                                           [album "1"]
+                                           [bgcol "333333"]
                                            [url ""]
                                            [title ""]
                                            [style  "float:right; margin:4px"]))])
-    (format (string-append "<iframe style=\"border: 0; width: 200px; height: 342px; ~a\" src=\"https://bandcamp.com/EmbeddedPlayer/album=4165003382/size=large/bgcol=333333/linkcol=0f91ff/tracklist=false/transparent=true/\" seamless>"
+    (format (string-append "<iframe style=\"~a; border: 0; width: ~apx; height: ~apx;\" src=\"https://bandcamp.com/EmbeddedPlayer/album=~a/size=large/bgcol=~a/linkcol=0f91ff/tracklist=false/transparent=true/\" seamless>"
                            "<a href=\"~a\">~a</a>"
                            "</iframe>")
             (hash-ref opts 'style "")
             (hash-ref opts 'width  "200")
             (hash-ref opts 'height "350")
+            (hash-ref opts 'album  "1")
+            (hash-ref opts 'bgcol  "333333")
             (hash-ref opts 'url    "bandcamp album url")
             (hash-ref opts 'title  "link title"))))
 
