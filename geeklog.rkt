@@ -289,6 +289,24 @@
                            (hash-ref opts 'playlist))])
             (hash-ref opts 'style ""))))
 
+(define (rm-bandcamp text
+                          #:options [options (make-hash '((null . null)))]
+                          #:tokens [tokens '()])
+  (let ([opts (hashify-tokens tokens
+                              #:defaults '([width  "200"]
+                                           [height "350"]
+                                           [url ""]
+                                           [title ""]
+                                           [style  "float:right; margin:4px"]))])
+    (format (string-append "<iframe style=\"border: 0; width: 200px; height: 342px; ~a\" src=\"https://bandcamp.com/EmbeddedPlayer/album=4165003382/size=large/bgcol=333333/linkcol=0f91ff/tracklist=false/transparent=true/\" seamless>"
+                           "<a href=\"~a\">~a</a>"
+                           "</iframe>")
+            (hash-ref opts 'style "")
+            (hash-ref opts 'width  "200")
+            (hash-ref opts 'height "350")
+            (hash-ref opts 'url    "bandcamp album url")
+            (hash-ref opts 'title  "link title"))))
+
 (define (rm-div text
                  #:options [options (make-hash '((null . null)))]
                  #:tokens  [tokens '()])
