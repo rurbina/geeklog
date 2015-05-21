@@ -387,6 +387,7 @@
 (ratamarkup-add-section-processor 'blog              rm-blog)
 (ratamarkup-add-section-processor 'doclist_table     rm-doclist-table)
 (ratamarkup-add-section-processor 'soundcloud_player rm-soundcloud)
+(ratamarkup-add-section-processor 'bandcamp_player   rm-bandcamp)
 (ratamarkup-add-section-processor 'div               rm-div)
 (ratamarkup-add-section-processor 'entry             rm-entry)
 (ratamarkup-add-section-processor 'include           rm-include)
