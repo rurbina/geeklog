@@ -321,10 +321,6 @@
             (hash-ref opts 'url         "bandcamp item url")
             (hash-ref opts 'title       "link title"))))
 
-<iframe style="border: 0; width: 100%; height: 42px;" src="https://bandcamp.com/EmbeddedPlayer/track=1638169136/size=small/bgcol=ffffff/linkcol=0687f5/transparent=true/" seamless><a href="http://96gradosmx.bandcamp.com/track/summer-heat-acoustic">Summer Heat Acoustic by 96 grados</a></iframe>
-<iframe style="border: 0; width: 350px; height: 350px;" src="https://bandcamp.com/EmbeddedPlayer/track=1638169136/size=large/bgcol=ffffff/linkcol=0687f5/minimal=true/transparent=true/" seamless><a href="http://96gradosmx.bandcamp.com/track/summer-heat-acoustic">Summer Heat Acoustic by 96 grados</a></iframe>
-
-
 (define (rm-div text
                  #:options [options (make-hash '((null . null)))]
                  #:tokens  [tokens '()])
