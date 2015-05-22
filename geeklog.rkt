@@ -298,20 +298,32 @@
                                            [type "album"]
                                            [id "1"]
                                            [bgcol "333333"]
+                                           [linkcol "0f91ff"]
+                                           [tracklist "false"]
+                                           [transparent "true"]
                                            [url ""]
                                            [title ""]
+                                           [size "large"]
                                            [style  "float:right; margin:4px"]))])
-    (format (string-append "<iframe style=\"~a; border: 0; width: ~apx; height: ~apx;\" src=\"https://bandcamp.com/EmbeddedPlayer/~a=~a/size=large/bgcol=~a/linkcol=0f91ff/tracklist=false/transparent=true/\" seamless>"
+    (format (string-append "<iframe style=\"~a; border: 0; width: ~apx; height: ~apx;\" src=\"https://bandcamp.com/EmbeddedPlayer/~a=~a/size=~a/bgcol=~a/linkcol=~a/tracklist=~a/transparent=~a/\" seamless>"
                            "<a href=\"~a\">~a</a>"
                            "</iframe>")
-            (hash-ref opts 'style "")
-            (hash-ref opts 'width  "200")
-            (hash-ref opts 'height "350")
-            (hash-ref opts 'type   "album")
-            (hash-ref opts 'id  "1")
-            (hash-ref opts 'bgcol  "333333")
-            (hash-ref opts 'url    "bandcamp item url")
-            (hash-ref opts 'title  "link title"))))
+            (hash-ref opts 'style       "")
+            (hash-ref opts 'width       "200")
+            (hash-ref opts 'height      "350")
+            (hash-ref opts 'type        "album")
+            (hash-ref opts 'id          "1")
+            (hash-ref opts 'size        "large")
+            (hash-ref opts 'bgcol       "333333")
+            (hash-ref opts 'linkcol     "0f91ff")
+            (hash-ref opts 'tracklist   "false")
+            (hash-ref opts 'transparent "true")
+            (hash-ref opts 'url         "bandcamp item url")
+            (hash-ref opts 'title       "link title"))))
+
+<iframe style="border: 0; width: 100%; height: 42px;" src="https://bandcamp.com/EmbeddedPlayer/track=1638169136/size=small/bgcol=ffffff/linkcol=0687f5/transparent=true/" seamless><a href="http://96gradosmx.bandcamp.com/track/summer-heat-acoustic">Summer Heat Acoustic by 96 grados</a></iframe>
+<iframe style="border: 0; width: 350px; height: 350px;" src="https://bandcamp.com/EmbeddedPlayer/track=1638169136/size=large/bgcol=ffffff/linkcol=0687f5/minimal=true/transparent=true/" seamless><a href="http://96gradosmx.bandcamp.com/track/summer-heat-acoustic">Summer Heat Acoustic by 96 grados</a></iframe>
+
 
 (define (rm-div text
                  #:options [options (make-hash '((null . null)))]
