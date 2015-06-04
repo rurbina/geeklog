@@ -626,7 +626,6 @@
          hashed
          key
          (cond [(or (set-member? scalar key) all-scalar)
-                (eprintf "key is ~v, val is ~v\n" key val)
                 (if (set-member? symkeys key)
                     (string->symbol val)
                     val)]
@@ -637,12 +636,9 @@
                                        #:unless (string=? item ""))
                               (string->symbol item))])]
                [else val]))))
-    (eprintf "default tokens are: ~v\n" default-tokens)
-    (eprintf "default token hash is: ~v\n" defaults)
     (for ([key (hash-keys defaults)])
       (unless (hash-has-key? hashed key)
         (hash-set! hashed key (hash-ref defaults key))))
-    (eprintf "hashed: ~v\n\n" hashed)
     hashed))
 
 ;;; documents
