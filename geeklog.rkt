@@ -308,18 +308,159 @@
     (format (string-append "<iframe style=\"~a; border: 0; width: ~apx; height: ~apx;\" src=\"https://bandcamp.com/EmbeddedPlayer/~a=~a/size=~a/bgcol=~a/linkcol=~a/tracklist=~a/transparent=~a/\" seamless>"
                            "<a href=\"~a\">~a</a>"
                            "</iframe>")
-            (hash-ref opts 'style       "")
-            (hash-ref opts 'width       "200")
-            (hash-ref opts 'height      "350")
-            (hash-ref opts 'type        "album")
-            (hash-ref opts 'id          "1")
-            (hash-ref opts 'size        "large")
-            (hash-ref opts 'bgcol       "333333")
-            (hash-ref opts 'linkcol     "0f91ff")
-            (hash-ref opts 'tracklist   "false")
-            (hash-ref opts 'transparent "true")
-            (hash-ref opts 'url         "bandcamp item url")
-            (hash-ref opts 'title       "link title"))))
+            (hash-ref opts 'style      )
+            (hash-ref opts 'width      )
+            (hash-ref opts 'height     )
+            (hash-ref opts 'type       )
+            (hash-ref opts 'id         )
+            (hash-ref opts 'size       )
+            (hash-ref opts 'bgcol      )
+            (hash-ref opts 'linkcol    )
+            (hash-ref opts 'tracklist  )
+            (hash-ref opts 'transparent)
+            (hash-ref opts 'url        )
+            (hash-ref opts 'title      ))))
+
+(define (rm-sm2 text
+                #:options [options (make-hash '((null . null)))]
+                #:tokens  [tokens '(playlist rows base-uri style)])
+  (let ([opts (hashify-tokens tokens
+                              #:scalar-keys '(base-uri style)
+                              #:defaults '([playlist #f]
+                                           [rows      5]
+                                           [base-uri ""]
+                                           [style    ""]))]
+        [playlist ""])
+    (for ([line (string-split text "\n")])
+      (let ([tokens (string-split line "|")])
+        (when (>= (length tokens) 2)
+          (set! tokens (map (lambda (t) (string-trim t)) tokens))
+          (set! playlist
+                (string-append
+                 playlist
+                 (format
+                  "<li><div class=\"sm2-row\"><div class=\"sm2-col sm2-wide\"><a href=\"~a\">~a</a></div>~a</li>\n"
+                  (string-append (hash-ref opts 'base-uri) (first tokens))
+                  (second tokens)
+                  (if (> (length tokens) 2)
+                      (apply string-append
+                             (map (lambda (t) (format "<div class=\"sm2-col\">~a</div>" t))
+                                  (map (lambda (t)
+                                         (if (string=? t "@DL")
+                                             (format "<a href=\"~a~a\" target=\"_blank\" class=\"sm2-icon sm2-music sm2-exclude\">Download</a>"
+                                                     (hash-ref opts 'base-uri)
+                                                     (first tokens))
+                                             t))
+                                  (rest (rest tokens)))))
+                      "")
+                  ))))))
+    (format (string-append
+             "<div style=\"~a\">"
+             "<div class=\"sm2-bar-ui textured full-width ~a\">
+ <div class=\"bd sm2-main-controls\">
+
+  <div class=\"sm2-inline-texture\"></div>
+  <div class=\"sm2-inline-gradient\"></div>
+
+  <div class=\"sm2-inline-element sm2-button-element\">
+   <div class=\"sm2-button-bd\">
+    <a href=\"#play\" class=\"sm2-inline-button play-pause\">Play / pause</a>
+   </div>
+  </div>
+
+  <div class=\"sm2-inline-element sm2-inline-status\">
+
+   <div class=\"sm2-playlist\">
+    <div class=\"sm2-playlist-target\">
+     <!-- playlist <ul> + <li> markup will be injected here -->
+     <!-- if you want default / non-JS content, you can put that here. -->
+     <noscript><p>JavaScript is required.</p></noscript>
+    </div>
+   </div>
+
+   <div class=\"sm2-progress\">
+    <div class=\"sm2-row\">
+    <div class=\"sm2-inline-time\">0:00</div>
+     <div class=\"sm2-progress-bd\">
+      <div class=\"sm2-progress-track\">
+       <div class=\"sm2-progress-bar\"></div>
+       <div class=\"sm2-progress-ball\"><div class=\"icon-overlay\"></div></div>
+      </div>
+     </div>
+     <div class=\"sm2-inline-duration\">0:00</div>
+    </div>
+   </div>
+
+  </div>
+
+  <div class=\"sm2-inline-element sm2-button-element sm2-volume\">
+   <div class=\"sm2-button-bd\">
+    <span class=\"sm2-inline-button sm2-volume-control volume-shade\"></span>
+    <a href=\"#volume\" class=\"sm2-inline-button sm2-volume-control\">volume</a>
+   </div>
+  </div>
+
+  <div class=\"sm2-inline-element sm2-button-element\">
+   <div class=\"sm2-button-bd\">
+    <a href=\"#prev\" title=\"Previous\" class=\"sm2-inline-button previous\">&lt; previous</a>
+   </div>
+  </div>
+
+  <div class=\"sm2-inline-element sm2-button-element\">
+   <div class=\"sm2-button-bd\">
+    <a href=\"#next\" title=\"Next\" class=\"sm2-inline-button next\">&gt; next</a>
+   </div>
+  </div>
+
+  <div class=\"sm2-inline-element sm2-button-element sm2-menu\">
+   <div class=\"sm2-button-bd\">
+     <a href=\"#menu\" class=\"sm2-inline-button menu\">menu</a>
+   </div>
+  </div>
+
+ </div>"
+             "
+ <div class=\"bd sm2-playlist-drawer sm2-element\">
+
+  <div class=\"sm2-inline-texture\">
+   <div class=\"sm2-box-shadow\"></div>
+  </div>
+
+  <!-- playlist content is mirrored here -->
+
+  <div class=\"sm2-playlist-wrapper\">
+    
+    <ul class=\"sm2-playlist-bd\">
+     ~a
+    </ul>
+  
+  </div>
+
+  <div class=\"sm2-extra-controls\">
+
+   <div class=\"bd\">
+
+    <div class=\"sm2-inline-element sm2-button-element\">
+     <a href=\"#prev\" title=\"Previous\" class=\"sm2-inline-button previous\">&lt; previous</a>
+    </div>
+
+    <div class=\"sm2-inline-element sm2-button-element\">
+     <a href=\"#next\" title=\"Next\" class=\"sm2-inline-button next\">&gt; next</a>
+    </div>
+
+   </div>
+
+  </div>
+
+ </div>
+
+</div>
+</div>"
+             )
+            (hash-ref opts 'style)
+            (if (hash-ref opts 'playlist) "playlist-open" "")
+            playlist
+            )))
 
 (define (rm-div text
                  #:options [options (make-hash '((null . null)))]
@@ -402,6 +543,7 @@
 (ratamarkup-add-section-processor 'doclist_table     rm-doclist-table)
 (ratamarkup-add-section-processor 'soundcloud_player rm-soundcloud)
 (ratamarkup-add-section-processor 'bandcamp_player   rm-bandcamp)
+(ratamarkup-add-section-processor 'sm2_player        rm-sm2)
 (ratamarkup-add-section-processor 'div               rm-div)
 (ratamarkup-add-section-processor 'entry             rm-entry)
 (ratamarkup-add-section-processor 'include           rm-include)
@@ -470,7 +612,7 @@
                         #:defaults      [defaults '()]
                         #:symbolic-keys [symkeys '()]
                         #:scalar-keys   [scalar '()])
-  (for/hash ([token tokens])
+  (for/hash ([token (append defaults tokens)])
     (let ([key (car token)] [val (cdr token)])
       (values 
        key
@@ -480,10 +622,10 @@
                   val)]
              [(set-member? symkeys key)
               (cond [(boolean? val) val]
-                    [{and (string? val) (string=? val "")} null]
-                    [else (for/list ([item (regexp-split #px"\\s*,\\s*" val)]
-                                     #:unless (string=? item ""))
-                            (string->symbol item))])]
+                                  [{and (string? val) (string=? val "")} null]
+                                  [else (for/list ([item (regexp-split #px"\\s*,\\s*" val)]
+                                                   #:unless (string=? item ""))
+                                          (string->symbol item))])]
              [else val])))))
 
 ;;; documents
