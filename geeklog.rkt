@@ -293,33 +293,36 @@
                           #:options [options (make-hash '((null . null)))]
                           #:tokens [tokens '()])
   (let ([opts (hashify-tokens tokens
-                              #:defaults '([width  "200"]
-                                           [height "350"]
-                                           [type "album"]
-                                           [id "1"]
-                                           [bgcol "333333"]
-                                           [linkcol "0f91ff"]
-                                           [tracklist "false"]
-                                           [transparent "true"]
-                                           [url ""]
-                                           [title ""]
-                                           [size "large"]
-                                           [style  "float:right; margin:4px"]))])
+                              #:all-scalar #t
+                              #:defaults '([width       . "200"]
+                                           [height      . "350"]
+                                           [type        . "album"]
+                                           [id          . "1"]
+                                           [bgcol       . "333333"]
+                                           [linkcol     . "0f91ff"]
+                                           [tracklist   . "false"]
+                                           [transparent . "true"]
+                                           [url         . ""]
+                                           [title       . "(title)"]
+                                           [size        . "large"]
+                                           [style       . "float:right; clear:right; margin:4px"]
+                                           ))])
     (format (string-append "<iframe style=\"~a; border: 0; width: ~apx; height: ~apx;\" src=\"https://bandcamp.com/EmbeddedPlayer/~a=~a/size=~a/bgcol=~a/linkcol=~a/tracklist=~a/transparent=~a/\" seamless>"
-                           "<a href=\"~a\">~a</a>"
-                           "</iframe>")
-            (hash-ref opts 'style      )
-            (hash-ref opts 'width      )
-            (hash-ref opts 'height     )
-            (hash-ref opts 'type       )
-            (hash-ref opts 'id         )
-            (hash-ref opts 'size       )
-            (hash-ref opts 'bgcol      )
-            (hash-ref opts 'linkcol    )
-            (hash-ref opts 'tracklist  )
+                             "<a href=\"~a\">~a</a>"
+                             "</iframe>")
+            (hash-ref opts 'style)
+            (hash-ref opts 'width)
+            (hash-ref opts 'height)
+            (hash-ref opts 'type)
+            (hash-ref opts 'id)
+            (hash-ref opts 'size)
+            (hash-ref opts 'bgcol)
+            (hash-ref opts 'linkcol)
+            (hash-ref opts 'tracklist)
             (hash-ref opts 'transparent)
-            (hash-ref opts 'url        )
-            (hash-ref opts 'title      ))))
+            (hash-ref opts 'url)
+            (hash-ref opts 'title)
+            )))
 
 (define (rm-sm2 text
                 #:options [options (make-hash '((null . null)))]
@@ -609,24 +612,38 @@
 
 ;; turn a list of tokens into a hash
 (define (hashify-tokens tokens
-                        #:defaults      [defaults '()]
+                        #:defaults      [default-tokens '()]
                         #:symbolic-keys [symkeys '()]
-                        #:scalar-keys   [scalar '()])
-  (for/hash ([token (append defaults tokens)])
-    (let ([key (car token)] [val (cdr token)])
-      (values 
-       key
-       (cond [(set-member? scalar key)
-              (if (set-member? symkeys key)
-                  (string->symbol val)
-                  val)]
-             [(set-member? symkeys key)
-              (cond [(boolean? val) val]
-                                  [{and (string? val) (string=? val "")} null]
-                                  [else (for/list ([item (regexp-split #px"\\s*,\\s*" val)]
-                                                   #:unless (string=? item ""))
-                                          (string->symbol item))])]
-             [else val])))))
+                        #:scalar-keys   [scalar '()]
+                        #:all-scalar    [all-scalar #f])
+  (let ([hashed (make-hash)]
+        [defaults (if (> (length default-tokens) 1)
+                    (hashify-tokens default-tokens #:symbolic-keys symkeys #:scalar-keys scalar #:all-scalar all-scalar)
+                    (make-hash))])
+    (for ([token tokens])
+      (let ([key (car token)] [val (cdr token)])
+        (hash-set!
+         hashed
+         key
+         (cond [(or (set-member? scalar key) all-scalar)
+                (eprintf "key is ~v, val is ~v\n" key val)
+                (if (set-member? symkeys key)
+                    (string->symbol val)
+                    val)]
+               [(set-member? symkeys key)
+                (cond [(boolean? val) val]
+                      [{and (string? val) (string=? val "")} null]
+                      [else (for/list ([item (regexp-split #px"\\s*,\\s*" val)]
+                                       #:unless (string=? item ""))
+                              (string->symbol item))])]
+               [else val]))))
+    (eprintf "default tokens are: ~v\n" default-tokens)
+    (eprintf "default token hash is: ~v\n" defaults)
+    (for ([key (hash-keys defaults)])
+      (unless (hash-has-key? hashed key)
+        (hash-set! hashed key (hash-ref defaults key))))
+    (eprintf "hashed: ~v\n\n" hashed)
+    hashed))
 
 ;;; documents
 
