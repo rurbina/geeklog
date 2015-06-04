@@ -329,11 +329,16 @@
                 #:tokens  [tokens '(playlist rows base-uri style)])
   (let ([opts (hashify-tokens tokens
                               #:scalar-keys '(base-uri style)
-                              #:defaults '([playlist #f]
-                                           [rows      5]
-                                           [base-uri ""]
-                                           [style    ""]))]
-        [playlist ""])
+                              #:defaults '([playlist . #f]
+                                           [rows     .  5]
+                                           [base-uri . ""]
+                                           [bgcolor  . "#333"]
+                                           [style    . ""]
+                                           [texture  . #f]))]
+        [playlist ""]
+        [css ""]
+        [classes ""])
+    ; playlist making
     (for ([line (string-split text "\n")])
       (let ([tokens (string-split line "|")])
         (when (>= (length tokens) 2)
@@ -357,10 +362,20 @@
                                   (rest (rest tokens)))))
                       "")
                   ))))))
+    ; css making
+    (set! css (string-append
+               (format ".sm2-bar-ui .sm2-main-controls, .sm2-bar-ui .sm2-playlist-drawer { background-color: ~a; }\n" (hash-ref opts 'bgcolor))))
+    ; class making
+    (set! classes (string-join
+                   (list (if (hash-ref opts 'playlist) "playlist-open" "")
+                         (if (string? (hash-ref opts 'texture)) "textured" ""))
+                   " "))
+    ; html making
     (format (string-append
              "<div style=\"~a\">"
-             "<div class=\"sm2-bar-ui textured full-width ~a\">
- <div class=\"bd sm2-main-controls\">
+             "<div class=\"sm2-bar-ui full-width ~a\">
+ <div class=\"bd sm2-main-controls\">"
+             "
 
   <div class=\"sm2-inline-texture\"></div>
   <div class=\"sm2-inline-gradient\"></div>
@@ -375,8 +390,6 @@
 
    <div class=\"sm2-playlist\">
     <div class=\"sm2-playlist-target\">
-     <!-- playlist <ul> + <li> markup will be injected here -->
-     <!-- if you want default / non-JS content, you can put that here. -->
      <noscript><p>JavaScript is required.</p></noscript>
     </div>
    </div>
@@ -458,11 +471,16 @@
  </div>
 
 </div>
-</div>"
+</div>
+"
+             "
+<style>~a</style>
+"
              )
             (hash-ref opts 'style)
-            (if (hash-ref opts 'playlist) "playlist-open" "")
+            classes
             playlist
+            css
             )))
 
 (define (rm-div text
@@ -525,21 +543,36 @@
 (define (rm-4shared-audio text
                           #:options [options (make-hash '((null . null)))]
                           #:tokens  [tokens '()])
-  (let ([opts (hashify-tokens tokens)])
-    (cond [(hash-has-key? opts 'folder)
+  (let ([opts (hashify-tokens tokens
+                              #:defaults '([type . "MINI"]
+                                           [kind . "playlist"]
+                                           [width . "300"]
+                                           [height . "200"]
+                                           [plheight . "200"]))])
+    (cond [(hash-has-key? opts 'id)
            (format 
             (string-append "<!-- 4shared-audio -->\n"
-                           "<iframe src='http://www.4shared.com/web/embed/audio/folder/~a"
+                           "<iframe src='http://www.4shared.com/web/embed/audio/~a/~a"
                            "?type=~a"
-                           "&widgetWidth=300&widgetHeight=210&showPlaylist=true&playlistHeight=150"
+                           "&widgetWidth=~a&widgetHeight=~a&showPlaylist=true&playlistHeight=~a"
                            "&widgetRid=252956435456' "
-                           "style='overflow:hidden;height:210px;width:300px;border: 0;margin:0;~a'></iframe>"
+                           "style='overflow:hidden;width:~apx;height:~apx;border: 0;margin:0;~a'></iframe>"
                            "\n\n")
-            (hash-ref opts 'folder)
-            "MINI"
+            (hash-ref opts 'kind)
+            (hash-ref opts 'id)
+            (hash-ref opts 'type)
+            (hash-ref opts 'width)
+            (hash-ref opts 'height)
+            (hash-ref opts 'plheight)
+            (hash-ref opts 'width)
+            (hash-ref opts 'height)
             (hash-ref opts 'style ""))]
-          [else "<!-- 4shared-audio: required folder param -->\n\n"])))
-                 
+          [else "<!-- 4shared-audio: required params: id width height plheight style kind=(folder|playlist) type=(NORMAL|MINI|MEGA) -->\n\n"])))
+
+(define (rm-lyrics text
+                   #:options [options (make-hash '((null . null)))]
+                   #:tokens  [tokens '()])
+  "")
 
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
@@ -548,6 +581,7 @@
 (ratamarkup-add-section-processor 'bandcamp_player   rm-bandcamp)
 (ratamarkup-add-section-processor 'sm2_player        rm-sm2)
 (ratamarkup-add-section-processor 'div               rm-div)
+(ratamarkup-add-section-processor 'lyrics            rm-lyrics)
 (ratamarkup-add-section-processor 'entry             rm-entry)
 (ratamarkup-add-section-processor 'include           rm-include)
 (ratamarkup-add-section-processor '4shared-audio     rm-4shared-audio)
