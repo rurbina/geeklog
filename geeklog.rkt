@@ -544,17 +544,21 @@
                           #:options [options (make-hash '((null . null)))]
                           #:tokens  [tokens '()])
   (let ([opts (hashify-tokens tokens
+                              #:symbolic-keys '(cover)
                               #:defaults '([type . "MINI"]
                                            [kind . "playlist"]
                                            [width . "300"]
                                            [height . "200"]
-                                           [plheight . "200"]))])
+                                           [plheight . "200"]
+                                           [cover . #f]
+                                           [artwork . #f]))])
     (cond [(hash-has-key? opts 'id)
            (format 
             (string-append "<!-- 4shared-audio -->\n"
                            "<iframe src='http://www.4shared.com/web/embed/audio/~a/~a"
                            "?type=~a"
                            "&widgetWidth=~a&widgetHeight=~a&showPlaylist=true&playlistHeight=~a"
+                           "&showArtwork=~a&showCover=~a"
                            "&widgetRid=252956435456' "
                            "style='overflow:hidden;width:~apx;height:~apx;border: 0;margin:0;~a'></iframe>"
                            "\n\n")
@@ -564,6 +568,8 @@
             (hash-ref opts 'width)
             (hash-ref opts 'height)
             (hash-ref opts 'plheight)
+            (if (hash-ref opts 'artwork) "true" "false")
+            (if (hash-ref opts 'cover) "true" "false")
             (hash-ref opts 'width)
             (hash-ref opts 'height)
             (hash-ref opts 'style ""))]
