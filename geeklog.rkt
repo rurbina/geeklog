@@ -224,6 +224,8 @@
                              (hash-ref (gldoc-headers doc) 'timestamp-format-date-time)
                              (hash-ref (gldoc-headers doc) 'author)
                              ((hash-ref (gldoc-headers doc) 'link-format) "Permalink")))
+        (when (> (hash-ref (gldoc-headers doc) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
+          (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
         (string-append output top break footer)))))
 
 (define (rm-doclist-table text
@@ -258,6 +260,8 @@
           (append
            (list (html-table-row-header (hash-ref search-options 'headers (hash-ref search-options 'fields)) #t))
            (for/list ([d docs])
+             (when (> (hash-ref (gldoc-headers d) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
+               (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers d) 'mtime)))
              (html-table-row (for/list ([field (hash-ref search-options 'fields '(name))])
                                (format "~a"
                                        (hash-ref (gldoc-headers d) (string->symbol field) field))))))
@@ -583,6 +587,7 @@
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
 (ratamarkup-add-section-processor 'doclist_table     rm-doclist-table)
+(ratamarkup-add-section-processor 'doclist-table     rm-doclist-table)
 (ratamarkup-add-section-processor 'soundcloud_player rm-soundcloud)
 (ratamarkup-add-section-processor 'bandcamp_player   rm-bandcamp)
 (ratamarkup-add-section-processor 'sm2_player        rm-sm2)
@@ -892,7 +897,9 @@
         [script (path/param-path (first (url-path (request-uri req))))]
         [settings null]
         [template-path null]
-        [cpu null] [real null] [gc null])
+        [cpu null] [real null] [gc null]
+        [response-headers '()]
+        [effective-mtime (box 0)])
     (set! settings
           (cond [(hash-has-key? site-settings script) (hash-ref site-settings script)]
                 [(hash-has-key? site-settings (string->symbol (string-replace script ".rkt" "")))
@@ -904,6 +911,7 @@
                   (eprintf "no settings for script ~v or for config ~v\n" script (hash-ref params 'config "(none)"))
                   default-settings]))
     (hash-set! settings 'recursion-depth (add1 (hash-ref settings 'recursion-depth 1)))
+    (hash-set! settings 'effective-mtime effective-mtime)
     (unless (hash-has-key? params 'doc) (hash-set! params 'doc (hash-ref settings 'default-doc)))
     (set!-values (geekdoc cpu real gc)
           (time-apply
@@ -913,6 +921,19 @@
     (set! geekdoc (first geekdoc))
     (hash-set! doc 'title (hash-ref! (gldoc-headers geekdoc) 'title (hash-ref params 'doc)))
     (hash-set! doc 'body (gldoc-body geekdoc))
+    (date-display-format 'rfc2822)
+    (set!
+     response-headers
+     (append
+      response-headers
+      (list (make-header
+             #"Last-Modified"
+             (string->bytes/utf-8 (date->string
+                                   (seconds->date
+                                    (if (> (unbox effective-mtime) 0)
+                                        (unbox effective-mtime)
+                                        (hash-ref (gldoc-headers geekdoc) 'mtime)))
+                                   #t))))))
     (eval `(require web-server/templates) tns)
     (namespace-set-variable-value! 'timing (list cpu real gc) #f tns)
     (namespace-set-variable-value! 'doc doc #f tns)
@@ -928,7 +949,7 @@
     (response/full
      200 #"OK"
      (current-seconds) TEXT/HTML-MIME-TYPE
-     empty
+     response-headers
      (list (string->bytes/utf-8 out-template)))))
 
 ;; launch the servlet
