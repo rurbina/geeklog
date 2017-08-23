@@ -501,6 +501,18 @@
             (string-append items (format " ~a=\"~a\"" (car token) (cdr token))))
           (ratamarkup-process text #:options options)))
 
+(define (rm-tag text
+                 #:options [options (make-hash '((null . null)))]
+                 #:tokens  [tokens '()])
+  (format "<~a~a>\n~a\n</~a>\n\n"
+          (car (first tokens))
+          (for/fold ([items ""])
+                    ([token (rest tokens)]
+                     #:unless (eq? (cdr token) #t))
+            (string-append items (format " ~a=\"~a\"" (car token) (cdr token))))
+          (ratamarkup-process text #:options options)
+          (car (first tokens))))
+
 (define (rm-entry text
                   #:options [options (make-hash '((null . null)))]
                   #:tokens  [tokens '()])
@@ -592,6 +604,7 @@
 (ratamarkup-add-section-processor 'bandcamp_player   rm-bandcamp)
 (ratamarkup-add-section-processor 'sm2_player        rm-sm2)
 (ratamarkup-add-section-processor 'div               rm-div)
+(ratamarkup-add-section-processor 'tag               rm-tag)
 (ratamarkup-add-section-processor 'lyrics            rm-lyrics)
 (ratamarkup-add-section-processor 'entry             rm-entry)
 (ratamarkup-add-section-processor 'include           rm-include)
