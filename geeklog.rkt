@@ -603,6 +603,7 @@
 (ratamarkup-add-section-processor 'soundcloud_player rm-soundcloud)
 (ratamarkup-add-section-processor 'bandcamp_player   rm-bandcamp)
 (ratamarkup-add-section-processor 'sm2_player        rm-sm2)
+(ratamarkup-add-section-processor 'sm2-player        rm-sm2)
 (ratamarkup-add-section-processor 'div               rm-div)
 (ratamarkup-add-section-processor 'tag               rm-tag)
 (ratamarkup-add-section-processor 'lyrics            rm-lyrics)
