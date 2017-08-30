@@ -18,7 +18,9 @@
          racket/date
          scribble/decode
          (rename-in ratamarkup/ratamarkup
-                    [ratamarkup ratamarkup-process]))
+                    [ratamarkup ratamarkup-process])
+         (rename-in ratamarkup/ratamarkup
+                    [ratamarkup-inline ratamarkup-process-inline]))
 
 ;;; settings
 
@@ -597,7 +599,10 @@
 (define (rm-lyrics text
                    #:options [options (make-hash '((null . null)))]
                    #:tokens  [tokens '()])
-  "")
+  (format "<div class=\"lyrics~a\"~a>~a</div>\n\n"
+          (hash-ref options 'class "")
+          (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
+          (ratamarkup-process-inline text #:options options)))
 
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
