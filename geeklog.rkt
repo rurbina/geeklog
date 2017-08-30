@@ -186,7 +186,10 @@
 				       "|")
                       #:options options))))))
            '()))
-    (html-table-render table #:widths (regexp-split #px"\\s*,\\s*" (hash-ref topts 'widths "")))))
+    (html-table-render table
+                       #:class (hash-ref topts 'class "")
+                       #:style (hash-ref topts 'style "")
+                       #:widths (regexp-split #px"\\s*,\\s*" (hash-ref topts 'widths "")))))
 
 (define (rm-blog text
                  #:options [options (make-hash '((null . null)))]
@@ -632,7 +635,8 @@
 
 (define (html-table-render [table html-table?]
                       #:widths [widths '()]
-                      #:class [class "orgtbl"]
+                      #:class [class ""]
+                      #:style [style ""]
                       #:process [procfn (lambda (t) t)]
                       #:first-row-header [frh #t])
   (let ([row-num 0] [cell-num 0])
@@ -664,7 +668,9 @@
                                     ""))))
         "\n\t\t"))
      "\n\t</tr>\n\t<tr>\n\t\t"
-     #:before-first "\n<table>\n\t<tr>\n\t\t"
+     #:before-first (format "\n<table~a~a>\n\t<tr>\n\t\t"
+                            (if (string=? class "") "" (format " class=\"~a\"" class))
+                            (if (string=? style "") "" (format " style=\"~a\"" style)))
      #:after-last "\n\t</tr>\n</table>\n\n")))
 
 ;;; utility functions
