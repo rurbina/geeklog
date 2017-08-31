@@ -114,7 +114,10 @@
            [docname (regexp-replaces (string-downcase (first m))
                                      '([#px" " "_"]
                                        [#px"[á]" "a"]
+                                       [#px"[é]" "e"]
+                                       [#px"[í]" "i"]
                                        [#px"[ó]" "o"]
+                                       [#px"[ú]" "u"]
                                        [#px"[ñ]" "n"]))]
            [doc null])
        (unless (regexp-match? #px"^(http:|https:|)//" (first m))
@@ -597,12 +600,22 @@
           [else "<!-- 4shared-audio: required params: id width height plheight style kind=(folder|playlist) type=(NORMAL|MINI|MEGA) -->\n\n"])))
 
 (define (rm-lyrics text
-                   #:options [options (make-hash '((null . null)))]
+                   #:options [globals (make-hash '((null . null)))]
                    #:tokens  [tokens '()])
-  (format "<div class=\"lyrics~a\"~a>~a</div>\n\n"
-          (hash-ref options 'class "")
-          (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
-          (ratamarkup-process-inline text #:options options)))
+  (let ([options (hashify-tokens tokens
+                                 #:defaults '([level "2"]))])
+    (if (string=? (hash-ref options 'caption "") "")
+        (format "<div class=\"lyrics~a\"~a>~a</div>\n\n"
+                (if (hash-has-key? options 'class) (format " ~a" (hash-ref options 'class "")) "")
+                (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
+                (ratamarkup-process-inline text #:options options))
+        (format "<div~a~a>\n<h~a>~a</h~a>\n<div class=\"lyrics\">~a</div></div>\n\n"
+                (if (hash-has-key? options 'class) (format " class=\"~a\"" (hash-ref options 'class "")) "")
+                (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
+                (hash-ref options 'level)
+                (hash-ref options 'caption)
+                (hash-ref options 'level)
+                (ratamarkup-process-inline text #:options options)))))
 
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
@@ -780,11 +793,23 @@
     (set! options (make-hash `((geeklog-settings . ,settings)))))
   ((hash-ref transforms transform-type) text #:settings settings #:options options))
 
+;; remove accents and stuff
+(define (unaccent-string text)
+  (regexp-replaces (string-downcase text)
+                   '([#px" " "_"]
+                     [#px"[á]" "a"]
+                     [#px"[é]" "e"]
+                     [#px"[í]" "i"]
+                     [#px"[ó]" "o"]
+                     [#px"[ú]" "u"]
+                     [#px"[ü]" "u"]
+                     [#px"[ñ]" "n"])))
+
 ;; load a geeklog document, which is basically headers\n\nbody
 (define (load-doc name
-                  #:path         [path null]
-                  #:headers-only [nobody #f]
-                  #:settings     [settings default-settings])
+                  #:path            [path null]
+                  #:headers-only    [nobody #f]
+                  #:settings        [settings default-settings])
   (let ([filename path] [whole ""] [doc null] [tmp null] [body null] [headers null] [search-path null])
     (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
     (when (path? path) (set! name (last (explode-path path))))
@@ -792,6 +817,11 @@
     (for ([suffix (hash-ref settings 'suffixes)]
           #:break (file-exists? filename))
       (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix))))
+    (when (and (not (file-exists? filename)) (not (string=? name (unaccent-string name))))
+      (set! name (unaccent-string name))
+      (for ([suffix (hash-ref settings 'suffixes)]
+            #:break (file-exists? filename))
+        (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix)))))
     (unless (file-exists? filename) (error (format "document ~v not found in ~v" name search-path)))
     (set! whole (file->string filename))
     (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
