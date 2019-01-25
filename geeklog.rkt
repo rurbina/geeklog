@@ -236,6 +236,46 @@
           (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
         (string-append output top break footer)))))
 
+(define (rm-wpblog text
+                 #:options [options (make-hash '((null . null)))]
+                 #:tokens  [tokens '()])
+  (let ([settings (hash-ref options 'geeklog-settings default-settings)]
+        [blog-options (hashify-tokens tokens
+                                      #:symbolic-keys '(tags no-tags sort)
+                                      #:scalar-keys   '(sort future reverse level no-past))])
+    (for/fold ([output ""])
+              ([doc (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
+                                 #:no-tags    (hash-ref blog-options 'no-tags '(draft))
+                                 #:sort       (hash-ref blog-options 'sort 'timestamp)
+                                 #:reverse    (if (hash-has-key? blog-options 'reverse) #f #t)
+                                 #:no-future  (if (hash-has-key? blog-options 'future) #f #t)
+                                 #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
+                                 #:settings   settings)])
+      (let ([body (parse-body (gldoc-body doc)
+                              (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
+                              #:options options
+                              #:settings settings)]
+            [tns (make-base-namespace)]
+            [top ""]
+            [entry ""]
+            [has-break #f]
+            [footer ""]
+            [level (hash-ref blog-options 'level "2")]
+            [break ""]
+            [template-path ""]
+            [out-template ""])
+        (set! body (regexp-replace #px"<h1>.*?</h1>" body ""))
+        (eval `(require web-server/templates) tns)
+        (set! template-path (build-path (hash-ref settings 'base-path ".") "post.html"))
+        (set! template-path (find-relative-path (current-directory) template-path))
+        (namespace-set-variable-value! 'header (lambda (h) (hash-ref (gldoc-headers doc) h)) #f tns)
+        (namespace-set-variable-value! 'body body #f tns)
+        (set! out-template (eval `(include-template ,(path->string template-path)) tns))
+        out-template))))
+        ;(when (> (hash-ref (gldoc-headers doc) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
+        ;  (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
+        ;(string-append output top entry break "<!-- footer:begin -->" footer "<!-- footer:end -->\n" "  </article>\n\n")))))
+
 (define (rm-doclist-table text
                           #:options [options (make-hash '((null . null)))]
                           #:tokens [tokens '()])
@@ -619,6 +659,7 @@
 
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
+(ratamarkup-add-section-processor 'wpblog            rm-wpblog)
 (ratamarkup-add-section-processor 'doclist_table     rm-doclist-table)
 (ratamarkup-add-section-processor 'doclist-table     rm-doclist-table)
 (ratamarkup-add-section-processor 'soundcloud_player rm-soundcloud)
