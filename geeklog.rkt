@@ -271,10 +271,7 @@
         (namespace-set-variable-value! 'header (lambda (h) (hash-ref (gldoc-headers doc) h)) #f tns)
         (namespace-set-variable-value! 'body body #f tns)
         (set! out-template (eval `(include-template ,(path->string template-path)) tns))
-        out-template))))
-        ;(when (> (hash-ref (gldoc-headers doc) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
-        ;  (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
-        ;(string-append output top entry break "<!-- footer:begin -->" footer "<!-- footer:end -->\n" "  </article>\n\n")))))
+        (string-append output out-template)))))
 
 (define (rm-doclist-table text
                           #:options [options (make-hash '((null . null)))]
@@ -682,7 +679,14 @@
     (hash-set! options 'geeklog-settings settings))
   (ratamarkup-process text #:options options))
 
-(define transforms (make-hash `([ratamarkup . ,transform-ratamarkup])))
+(define (transform-passthrough text
+                              #:settings [settings default-settings]
+                              #:options [options (make-hash `((geeklog-settings . ,default-settings)))])
+  text)
+
+(define transforms (make-hash `([ratamarkup  . ,transform-ratamarkup]
+                                [passthrough . ,transform-passthrough]
+                                [passthru    . ,transform-passthrough])))
 
 ;;; table rendering utility function
 
