@@ -263,13 +263,26 @@
             [level (hash-ref blog-options 'level "2")]
             [break ""]
             [template-path ""]
-            [out-template ""])
+            [out-template ""]
+            [header (lambda (h) (hash-ref (gldoc-headers doc) h))])
         (set! body (regexp-replace #px"<h1>.*?</h1>" body ""))
+        (if (regexp-match #px"<!--more[^\n]*-->" body)
+            (begin
+              (set! top (regexp-replace #px"(?s:<!--more[^\n]*-->.*$)" body ""))
+              (set! has-break #t))
+            (set! top body))
         (eval `(require web-server/templates) tns)
         (set! template-path (build-path (hash-ref settings 'base-path ".") "post.html"))
         (set! template-path (find-relative-path (current-directory) template-path))
-        (namespace-set-variable-value! 'header (lambda (h) (hash-ref (gldoc-headers doc) h)) #f tns)
-        (namespace-set-variable-value! 'body body #f tns)
+        (map (lambda (pair) (namespace-set-variable-value! (car pair) (cdr pair) #f tns))
+             (list (cons 'top top)
+                   (cons 'body body)
+                   (cons 'title (header 'title))
+                   (cons 'author (header 'author))
+                   (cons 'has-break has-break)
+                   (cons 'link (header 'link-format))
+                   (cons 'datetime (header 'timestamp-format-date-time))
+                   (cons 'header header)))
         (set! out-template (eval `(include-template ,(path->string template-path)) tns))
         (string-append output out-template)))))
 
@@ -570,6 +583,8 @@
                 (ratamarkup-process text #:options options))
         (format "<!-- §entry error: all these headers are required: author, timestamp -->\n\n"))))
 
+(define (rm-more text #:options options #:tokens tokens) "<!--more-->\n\n")
+
 (define (rm-include text
                     #:options [options (make-hash '((null . null)))]
                     #:tokens  [tokens '()])
@@ -669,6 +684,7 @@
 (ratamarkup-add-section-processor 'entry             rm-entry)
 (ratamarkup-add-section-processor 'include           rm-include)
 (ratamarkup-add-section-processor '4shared-audio     rm-4shared-audio)
+(ratamarkup-add-section-processor 'more              rm-more)
 
 ;;; transform modes
 
