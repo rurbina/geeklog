@@ -302,6 +302,7 @@
                 'or-tags (fixlist (hash-ref search-options 'or-tags ""))
                 'no-tags (fixlists search-options '(not-tag not-tags no-tag no-tags
                                                     not_tag not_tags no_tag no_tags))
+                'and-tags (fixlist (hash-ref search-options 'and-tags ""))
                 'sort    (string->symbol (hash-ref search-options 'sort "name"))
                 'fields  (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'fields "name"))
                 'headers (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'headers "Item"))
@@ -309,6 +310,7 @@
     (set! docs (search-docs #:tags      (hash-ref search-options 'tags)
                             #:no-tags   (hash-ref search-options 'no-tags)
                             #:or-tags   (hash-ref search-options 'or-tags)
+                            #:and-tags  (hash-ref search-options 'and-tags)
                             #:sort      (hash-ref search-options 'sort)
                             #:settings  (hash-ref options 'geeklog-settings default-settings)))
     (if (empty? docs)
@@ -794,6 +796,7 @@
          #:tags            [tags         '()]
          #:or-tags         [or-tags      '()]
          #:no-tags         [no-tags      '()]
+         #:and-tags        [and-tags     '()]
          #:headers-only    [headers-only #t]
          #:sort            [sort-key     'name]
          #:reverse         [sort-reverse #f]
@@ -822,6 +825,8 @@
                                      (subset? tags (hash-ref (gldoc-headers doc) 'tags '()))]
                                  [or (empty? or-tags)
                                      (not (empty? (set-intersect or-tags (hash-ref (gldoc-headers doc) 'tags '()))))]
+                                 [or (empty? and-tags)
+                                     (subset? and-tags (hash-ref (gldoc-headers doc) 'tags '()))]
                                  [or (empty? no-tags)
                                      (not (subset? no-tags (hash-ref (gldoc-headers doc) 'tags '())))]
                                  [or (< (hash-ref (gldoc-headers doc) 'timestamp (add1 now)) now)
