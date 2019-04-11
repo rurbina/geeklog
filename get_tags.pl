@@ -1,4 +1,4 @@
-#! env perl
+#! /usr/bin/perl
 
 use v5.18;
 use common::sense;
