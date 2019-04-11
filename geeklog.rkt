@@ -871,33 +871,44 @@
                      [#px"[ü]" "u"]
                      [#px"[ñ]" "n"])))
 
+;; doc metadata caching
+(define doc-metadata-cache (make-hash))
+
 ;; load a geeklog document, which is basically headers\n\nbody
 (define (load-doc name
                   #:path            [path null]
                   #:headers-only    [nobody #f]
                   #:settings        [settings default-settings])
-  (let ([filename path] [whole ""] [doc null] [tmp null] [body null] [headers null] [search-path null])
-    (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
-    (when (path? path) (set! name (last (explode-path path))))
-    (when (null? filename) (set! filename "non-existing-file"))
-    (for ([suffix (hash-ref settings 'suffixes)]
-          #:break (file-exists? filename))
-      (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix))))
-    (when (and (not (file-exists? filename)) (not (string=? name (unaccent-string name))))
-      (set! name (unaccent-string name))
+  (let (
+        [filename path] [whole ""] [doc null] [tmp null] [body null] [headers null] [search-path null]
+        [start-time (current-milliseconds)] [result null])
+    (when (and nobody (hash-has-key? doc-metadata-cache name))
+      (set! result (hash-ref doc-metadata-cache name)))
+    (when (null? result)
+      (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
+      (when (path? path) (set! name (last (explode-path path))))
+      (when (null? filename) (set! filename "non-existing-file"))
       (for ([suffix (hash-ref settings 'suffixes)]
             #:break (file-exists? filename))
-        (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix)))))
-    (unless (file-exists? filename) (error (format "document ~v not found in ~v" name search-path)))
-    (set! whole (file->string filename))
-    (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
-    (set! headers (parse-headers (first tmp) #:filename filename #:settings settings))
-    (if nobody
-        (set! body (last tmp))
-        (set! body (parse-body (last tmp)
-                               (hash-ref headers 'transform (hash-ref settings 'default-transform))
-                               #:settings settings)))
-    (gldoc headers body)))
+        (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix))))
+      (when (and (not (file-exists? filename)) (not (string=? name (unaccent-string name))))
+        (set! name (unaccent-string name))
+        (for ([suffix (hash-ref settings 'suffixes)]
+              #:break (file-exists? filename))
+          (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix)))))
+      (unless (file-exists? filename) (error (format "document ~v not found in ~v" name search-path)))
+      (set! whole (file->string filename))
+      (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
+      (set! headers (parse-headers (first tmp) #:filename filename #:settings settings))
+      (set! body
+            (if nobody
+                (last tmp)
+                (parse-body (last tmp)
+                            (hash-ref headers 'transform (hash-ref settings 'default-transform))
+                            #:settings settings)))
+      (set! result (gldoc headers body))
+      (hash-set! doc-metadata-cache name result))
+    result))
 
 (define (make-link href [text ""]
                    #:title [title ""]
@@ -1020,7 +1031,9 @@
         [template-path null]
         [cpu null] [real null] [gc null]
         [response-headers '()]
+        [start-time (current-milliseconds)]
         [effective-mtime (box 0)])
+    (printf "REQUEST: ~a~n" (hash-ref params 'doc))
     (set! settings
           (cond [(hash-has-key? site-settings script) (hash-ref site-settings script)]
                 [(hash-has-key? site-settings (string->symbol (string-replace script ".rkt" "")))
@@ -1056,17 +1069,21 @@
                                         (hash-ref (gldoc-headers geekdoc) 'mtime)))
                                    #t))))))
     (eval `(require web-server/templates) tns)
-    (namespace-set-variable-value! 'timing (list cpu real gc) #f tns)
-    (namespace-set-variable-value! 'doc doc #f tns)
-    (namespace-set-variable-value! 'gldoc gldoc #f tns)
-    (namespace-set-variable-value! 'gldoc-body gldoc-body #f tns)
-    (namespace-set-variable-value! 'headers (gldoc-headers geekdoc) #f tns)
-    (namespace-set-variable-value! 'load-doc (lambda (name) (load-doc name #:settings settings)) #f tns)
-    (namespace-set-variable-value! 'default-settings settings #f tns)
+    (for ([var (list
+                (cons 'body (hash-ref doc 'body ""))
+                (cons 'title (hash-ref (gldoc-headers geekdoc) 'title ""))
+                (cons 'timing real);(list cpu real gc))
+                (cons 'doc doc)
+                (cons 'gldoc gldoc)
+                (cons 'headers (gldoc-headers geekdoc))
+                (cons 'default-settings settings)
+                (cons 'include (lambda (name) (gldoc-body (load-doc name #:settings settings)))))])
+      (namespace-set-variable-value! (car var) (cdr var) #f tns))    
     ;; template path must be relative, don't ask me why
     (set! template-path (build-path (hash-ref settings 'base-path ".") (hash-ref settings 'template)))
     (set! template-path (find-relative-path (current-directory) template-path))
     (set! out-template (eval `(include-template ,(path->string template-path)) tns))
+    (printf "~a ms ~n"  (- (current-milliseconds) start-time))
     (response/full
      200 #"OK"
      (current-seconds) TEXT/HTML-MIME-TYPE
