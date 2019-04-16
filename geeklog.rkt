@@ -411,7 +411,7 @@
                 (string-append
                  playlist
                  (format
-                  "<li><div class=\"sm2-row\"><div class=\"sm2-col sm2-wide\"><a href=\"~a\">~a</a></div>~a</li>\n"
+                  "<li><div class=\"sm2-row\"><div class=\"sm2-col sm2-wide\"><a href=\"~a\">~a</a></div>~a</div></li>\n"
                   (string-append (hash-ref opts 'base-uri) (first tokens))
                   (second tokens)
                   (if (> (length tokens) 2)
