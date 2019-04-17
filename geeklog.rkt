@@ -3,6 +3,7 @@
 #| geeklog.rkt https://github.com/rurbina/geeklog |#
 
 (provide geeklog
+         geeklog-uri
          (rename-out [load-doc          geeklog-load-doc]
                      [merge-settings    geeklog-merge-settings]
                      [default-settings  geeklog-default-settings]
@@ -25,14 +26,15 @@
 ;;; settings
 
 ;; takes a hash and merges it key-by-key with settings
-(define (merge-settings new-hash [site 'default])
-  (unless (hash-has-key? site-settings site)
-    (hash-set! site-settings site (make-hash (for/list ([key (hash-keys default-settings)])
-                                               (cons key (hash-ref default-settings key))))))
-  (for ([key (hash-keys new-hash)])
-    (hash-set! (hash-ref site-settings site)
-               key
-               (hash-ref new-hash key))))
+(define (merge-settings new-values [site 'default])
+  (when (hash? new-values) (set! new-values (hash->list new-values)))
+  (when (not (hash-has-key? site-settings site))
+    (hash-set! site-settings site (make-hash new-values))
+    (merge-settings default-settings site))
+  (let ([target (hash-ref site-settings site)]
+        [default (hash-ref site-settings 'default)])
+    (for ([pair new-values])
+      (hash-set! target (car pair) (cdr pair)))))
 
 (define (default-format-date epoch #:timezone [tz "UTC"])
   (let ([d (seconds->date epoch)]
@@ -85,8 +87,10 @@
                   "a la 1:"))
 
 (define default-settings
-  (make-hash `([base-path         . "."]
-               [data-path         . "data"]
+  (make-hash `([name              . "default settings"]
+               [base-path         . "."]
+               [hostname          . "*"]
+               [data-path         . "docs"]
                [suffixes          . (".txt" ".link" "")]
                [template          . "template.html"]
                [404-doc           . "error-404"]
@@ -94,7 +98,8 @@
                [default-doc       . "index"]
                [format-date       . ,default-format-date]
                [format-time       . ,default-format-time]
-               [format-date-time  . ,default-format-date-time])))
+               [format-date-time  . ,default-format-date-time]
+               [cache             . ,(make-hash)])))
 
 (define site-settings
   (make-hash `([default . ,default-settings])))
@@ -816,6 +821,7 @@
                             (with-handlers ([exn:fail? (lambda (e)
                                                          (eprintf "\t\terror is ~v\n" e)
                                                          void)])
+                              (eprintf "	\e[33msearch: \e[0m~v\n" (path->string file-path))
                               (load-doc (path->string file-path)
                                         #:path file-path
                                         #:settings settings
@@ -871,32 +877,42 @@
                      [#px"[ü]" "u"]
                      [#px"[ñ]" "n"])))
 
-;; doc metadata caching
-(define doc-metadata-cache (make-hash))
-
 ;; load a geeklog document, which is basically headers\n\nbody
 (define (load-doc name
                   #:path            [path null]
                   #:headers-only    [nobody #f]
                   #:settings        [settings default-settings])
-  (let (
+  (let ([reqname name]
         [filename path] [whole ""] [doc null] [tmp null] [body null] [headers null] [search-path null]
-        [start-time (current-milliseconds)] [result null])
-    (when (and nobody (hash-has-key? doc-metadata-cache name))
-      (set! result (hash-ref doc-metadata-cache name)))
+        [start-time (current-milliseconds)] [result null] [cache (hash-ref settings 'cache)])
+    (when (and nobody (hash-has-key? cache reqname))
+      (eprintf "	cache hit: ~a\n" reqname)
+      (set! result (hash-ref cache reqname)))
     (when (null? result)
+      (when nobody (eprintf "	cache miss: ~a\n" reqname))
       (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
       (when (path? path) (set! name (last (explode-path path))))
       (when (null? filename) (set! filename "non-existing-file"))
+      ;; try all suffixes
       (for ([suffix (hash-ref settings 'suffixes)]
             #:break (file-exists? filename))
         (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix))))
+      ;; try again but removing accents
       (when (and (not (file-exists? filename)) (not (string=? name (unaccent-string name))))
         (set! name (unaccent-string name))
         (for ([suffix (hash-ref settings 'suffixes)]
               #:break (file-exists? filename))
           (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix)))))
-      (unless (file-exists? filename) (error (format "document ~v not found in ~v" name search-path)))
+      (unless (file-exists? filename)
+        ;; given up, croak
+        (raise (make-exn:fail:filesystem
+                (format "document ~a not found as ~a in base ~a data ~a, suffixes ~a"
+                        name filename
+                        (hash-ref settings 'base-path)
+                        (hash-ref settings 'data-path)
+                        (hash-ref settings 'suffixes))
+                (current-continuation-marks))))
+      ;; read and stuff
       (set! whole (file->string filename))
       (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
       (set! headers (parse-headers (first tmp) #:filename filename #:settings settings))
@@ -907,7 +923,8 @@
                             (hash-ref headers 'transform (hash-ref settings 'default-transform))
                             #:settings settings)))
       (set! result (gldoc headers body))
-      (hash-set! doc-metadata-cache name result))
+      (eprintf "	cached ~a\n" name)
+      (hash-set! cache reqname result))
     result))
 
 (define (make-link href [text ""]
@@ -1018,6 +1035,91 @@
                          #t ;localtime
                          ))]
         [else default]))
+
+(define (do-load req path headers settings)
+  (let ([doc null]
+        [errmsg ""]
+        [docname (path/param-path (last (url-path (request-uri req))))]
+        [effective-mtime (box 0)])
+    (hash-set! settings 'recursion-depth (add1 (hash-ref settings 'recursion-depth 1)))
+    (hash-set! settings 'effective-mtime effective-mtime)
+    (when (string=? docname "") (set! docname (hash-ref settings 'default-doc)))
+    (with-handlers ([exn:fail:filesystem? (lambda (x) (set! errmsg (format "document not found ~a" x)))])
+      (set! doc (load-doc docname #:settings settings)))
+    (if (null? doc) errmsg
+        (templatify doc #:settings settings))))
+
+(define (do-info req path headers settings)
+  (format "<html><head><title>~a</title></head><body><h1>Server info</h1><h2>settings</h2>~a</body></html>"
+          (cdr (first (filter (lambda (h) (symbol=? (car h) 'host)) headers)))
+          (string-join
+           (for/list ([h (hash-keys site-settings)])
+             (format "<h3>~a</h3><dl>~a</dl>" h
+                     (string-join
+                      (for/list ([k (hash-keys (hash-ref site-settings h))])
+                        (format "<dt>~a</dt><dd>~v</dd>" k (hash-ref (hash-ref site-settings h) k))))))
+           "\n")))
+
+;; url-based (not query-string) servlet
+(define (geeklog-servlet-uri req)
+  (let ([start-time (current-milliseconds)]
+        [hostname (cdr (first (filter (lambda (h) (symbol=? (car h) 'host)) (request-headers req))))]
+        [path (url->string (request-uri req))]
+        [item (path/param-path (last (url-path (request-uri req))))]
+        [headers (list (make-header (string->bytes/utf-8 "omg") (string->bytes/utf-8 "wtf")))]
+        [doc "index"]
+        [output ""]
+        [specials `(("info" . ,do-info))]
+        [settings default-settings]
+        [special #f])
+    (printf "REQUEST: ~a ~a " hostname path)
+    (set! settings (hash-ref site-settings hostname default-settings))
+    (printf "SITE: ~a " (hash-ref settings 'name))
+    (when (string=? item "") (set! item (hash-ref settings 'default-doc)))
+    (printf "ITEM: ~a " item)
+    (for ([mapped specials])
+      (when (string=? item (car mapped))
+        (set! special (cdr mapped))))
+    (printf "SPECIAL: ~a " special)
+    (set! output
+          ((if special special do-load)
+           req path (request-headers req) settings))
+    (printf "TIME: ~a ms ~n"  (- (current-milliseconds) start-time))
+    (response/full 200 #"OK"
+                   (current-seconds) TEXT/HTML-MIME-TYPE
+                   headers
+                   (list (string->bytes/utf-8 output)))))
+
+;; apply template
+(define (templatify geekdoc
+         #:settings [settings default-settings])
+  (let ([tns (make-base-namespace)] [template-path null])
+    (eval `(require web-server/templates) tns)
+    (for ([var (list (cons 'body     (gldoc-body geekdoc))
+                     (cons 'title    (hash-ref (gldoc-headers geekdoc) 'title ""))
+                     (cons 'gldoc    geekdoc)
+                     (cons 'headers  (gldoc-headers geekdoc))
+                     (cons 'timing 0)
+                     (cons 'default-settings  settings)
+                     (cons 'include  (lambda (name) (gldoc-body (load-doc name #:settings settings)))))])
+      (namespace-set-variable-value! (car var) (cdr var) #f tns))
+    ;; template path must be relative, don't ask me why
+    (set! template-path (build-path (hash-ref settings 'base-path ".") (hash-ref settings 'template)))
+    (set! template-path (find-relative-path (current-directory) template-path))
+    (eval `(include-template ,(path->string template-path)) tns)))
+  
+
+;; launch the uri-based servlet
+(define (geeklog-uri #:port [port 8099] #:path [path "."])
+  (serve/servlet geeklog-servlet-uri
+                 #:launch-browser? #f
+                 #:listen-ip #f
+                 #:port port
+                 #:stateless? #t
+                 #:server-root-path path
+                 #:servlets-root path
+                 #:servlet-regexp #rx""))
+
 
 ;; servlet processing thread
 (define (geeklog-servlet req)
