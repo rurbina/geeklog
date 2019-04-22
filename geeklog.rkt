@@ -18,6 +18,7 @@
          racket/list
          racket/date
          scribble/decode
+         "handlers.rkt"
          (rename-in ratamarkup/ratamarkup
                     [ratamarkup ratamarkup-process])
          (rename-in ratamarkup/ratamarkup
@@ -912,7 +913,7 @@
                         (hash-ref settings 'data-path)
                         (hash-ref settings 'suffixes))
                 (current-continuation-marks))))
-      ;; read and stuff
+      ;; read and parse
       (set! whole (file->string filename))
       (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
       (set! headers (parse-headers (first tmp) #:filename filename #:settings settings))
@@ -1060,6 +1061,11 @@
                         (format "<dt>~a</dt><dd>~v</dd>" k (hash-ref (hash-ref site-settings h) k))))))
            "\n")))
 
+;; special handlers
+(define uri-handlers
+  (make-hash `(['default . ,do-load]
+               ["info"   . ,do-info])))
+
 ;; url-based (not query-string) servlet
 (define (geeklog-servlet-uri req)
   (let ([start-time (current-milliseconds)]
@@ -1069,21 +1075,17 @@
         [headers (list (make-header (string->bytes/utf-8 "omg") (string->bytes/utf-8 "wtf")))]
         [doc "index"]
         [output ""]
-        [specials `(("info" . ,do-info))]
-        [settings default-settings]
-        [special #f])
+        [handler do-load]
+        [settings default-settings])
     (printf "REQUEST: ~a ~a " hostname path)
     (set! settings (hash-ref site-settings hostname default-settings))
     (printf "SITE: ~a " (hash-ref settings 'name))
     (when (string=? item "") (set! item (hash-ref settings 'default-doc)))
     (printf "ITEM: ~a " item)
-    (for ([mapped specials])
-      (when (string=? item (car mapped))
-        (set! special (cdr mapped))))
-    (printf "SPECIAL: ~a " special)
-    (set! output
-          ((if special special do-load)
-           req path (request-headers req) settings))
+    (set! handler (hash-ref uri-handlers item 'do-load))
+    (printf "HANDLER: ~a " handler)
+    (set! output (handler req path (request-headers req) settings))
+    ;(set! output (do-load req path (request-headers req) settings))
     (printf "TIME: ~a ms ~n"  (- (current-milliseconds) start-time))
     (response/full 200 #"OK"
                    (current-seconds) TEXT/HTML-MIME-TYPE
@@ -1111,6 +1113,8 @@
 
 ;; launch the uri-based servlet
 (define (geeklog-uri #:port [port 8099] #:path [path "."])
+  ;; load handlers
+  (for ([pair handlers]) (hash-ref! handlers (car pair) (cdr pair)))
   (serve/servlet geeklog-servlet-uri
                  #:launch-browser? #f
                  #:listen-ip #f
