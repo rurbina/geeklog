@@ -1,6 +1,6 @@
 #lang racket
 
-#| geeklog.rkt https://github.com/rurbina/geeklog |#
+#| main.rkt https://github.com/rurbina/geeklog |#
 
 (provide geeklog
          geeklog-uri
@@ -24,14 +24,17 @@
          (rename-in ratamarkup/ratamarkup
                     [ratamarkup-inline ratamarkup-process-inline]))
 
-;;; settings
+;;; import new site settings
 
 ;; takes a hash and merges it key-by-key with settings
 (define (merge-settings new-values [site 'default])
   (when (hash? new-values) (set! new-values (hash->list new-values)))
   (when (not (hash-has-key? site-settings site))
+    ;; preload all defaults
     (hash-set! site-settings site (make-hash new-values))
-    (merge-settings default-settings site))
+    (merge-settings default-settings site)
+    ;; and make a new cache hash
+    (hash-set! (hash-ref site-settings site) 'cache (make-hash)))
   (let ([target (hash-ref site-settings site)]
         [default (hash-ref site-settings 'default)])
     (for ([pair new-values])
@@ -823,7 +826,7 @@
                                                          (eprintf "\t\terror is ~v\n" e)
                                                          void)])
                               (eprintf "	\e[33msearch: \e[0m~v\n" (path->string file-path))
-                              (load-doc (path->string file-path)
+                              (load-doc (path->string (path-replace-extension (last (explode-path file-path)) #""))
                                         #:path file-path
                                         #:settings settings
                                         #:headers-only headers-only)))]
@@ -884,13 +887,24 @@
                   #:headers-only    [nobody #f]
                   #:settings        [settings default-settings])
   (let ([reqname name]
-        [filename path] [whole ""] [doc null] [tmp null] [body null] [headers null] [search-path null]
-        [start-time (current-milliseconds)] [result null] [cache (hash-ref settings 'cache)])
+        [filename path]
+        [whole ""]
+        [doc null]
+        [tmp null]
+        [body null]
+        [headers null]
+        [search-path null]
+        [start-time (current-milliseconds)]
+        [result null]
+        [cache (hash-ref settings 'cache)])
+    ;; if it's a headers-only request, check if cached
     (when (and nobody (hash-has-key? cache reqname))
       (eprintf "	cache hit: ~a\n" reqname)
       (set! result (hash-ref cache reqname)))
+    ;; otherwise, load it
     (when (null? result)
       (when nobody (eprintf "	cache miss: ~a\n" reqname))
+      ;; find the file
       (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
       (when (path? path) (set! name (last (explode-path path))))
       (when (null? filename) (set! filename "non-existing-file"))
@@ -924,7 +938,7 @@
                             (hash-ref headers 'transform (hash-ref settings 'default-transform))
                             #:settings settings)))
       (set! result (gldoc headers body))
-      (eprintf "	cached ~a\n" name)
+      (eprintf "	cached ~a\n" reqname)
       (hash-set! cache reqname result))
     result))
 
@@ -965,11 +979,15 @@
           (when (string=? value "#t") (hash-set! headers key #t))
           (when (string=? value "#f") (hash-set! headers key #f)))))
     ;; these should always exist
-    (for ([key '(title author tags keywords description comment)])
+    (for ([key '(title author tags categories keywords description comment)])
       (unless (hash-has-key? headers key) (hash-set! headers key "")))
     ;; (eprintf "\theaders so far: ~v\n" headers)
     ;; some transforms
     (hash-set*! headers
+                ;; categories should be tokenized, not just split on whitespace
+                'categories (for/list ([cat (regexp-split #px"\\s+" (hash-ref headers 'categories ""))]
+                                       #:when (> (string-length cat) 0))
+                              cat)
                 'tags (for/list ([tag (regexp-split #px"\\s+" (hash-ref headers 'tags ""))]
                                  #:when (> (string-length tag) 0))
                         (string->symbol tag))
@@ -1047,7 +1065,8 @@
     (when (string=? docname "") (set! docname (hash-ref settings 'default-doc)))
     (with-handlers ([exn:fail:filesystem? (lambda (x) (set! errmsg (format "document not found ~a" x)))])
       (set! doc (load-doc docname #:settings settings)))
-    (if (null? doc) errmsg
+    (if (null? doc)
+        (cons 404 #"Not found")
         (templatify doc #:settings settings))))
 
 (define (do-info req path headers settings)
@@ -1063,8 +1082,8 @@
 
 ;; special handlers
 (define uri-handlers
-  (make-hash `(['default . ,do-load]
-               ["info"   . ,do-info])))
+  (make-hash `([default . ,do-load]
+               ["info"  . ,do-info])))
 
 ;; url-based (not query-string) servlet
 (define (geeklog-servlet-uri req)
@@ -1075,19 +1094,32 @@
         [headers (list (make-header (string->bytes/utf-8 "omg") (string->bytes/utf-8 "wtf")))]
         [doc "index"]
         [output ""]
-        [handler do-load]
-        [settings default-settings])
+        [handler (hash-ref uri-handlers 'default)]
+        [settings default-settings]
+        [response-code 200]
+        [response-bytes #"OK"])
     (printf "REQUEST: ~a ~a " hostname path)
     (set! settings (hash-ref site-settings hostname default-settings))
     (printf "SITE: ~a " (hash-ref settings 'name))
     (when (string=? item "") (set! item (hash-ref settings 'default-doc)))
     (printf "ITEM: ~a " item)
-    (set! handler (hash-ref uri-handlers item 'do-load))
+    (when (hash-has-key? uri-handlers item)
+      (set! handler (hash-ref uri-handlers item)))
     (printf "HANDLER: ~a " handler)
     (set! output (handler req path (request-headers req) settings))
-    ;(set! output (do-load req path (request-headers req) settings))
     (printf "TIME: ~a ms ~n"  (- (current-milliseconds) start-time))
-    (response/full 200 #"OK"
+    (eprintf "OUTPUT: ~a\n" output)
+    (when (pair? output)
+      (when (number? (car output))
+        (set! response-code (car output))
+        (set! response-bytes (cdr output))
+        (set! output
+              (format "<html><head><title>404 Not Found</title></head><body><p>Not found: ~a</p></body></html>\n"
+                      path)))
+      (when (string=? (car output) "templatify")
+        (set! output (templatify (gldoc (cadr output) (cddr output)) #:settings settings))))
+    (response/full response-code
+                   response-bytes
                    (current-seconds) TEXT/HTML-MIME-TYPE
                    headers
                    (list (string->bytes/utf-8 output)))))
@@ -1114,7 +1146,7 @@
 ;; launch the uri-based servlet
 (define (geeklog-uri #:port [port 8099] #:path [path "."])
   ;; load handlers
-  (for ([pair handlers]) (hash-ref! handlers (car pair) (cdr pair)))
+  (for ([pair default-handlers]) (hash-set! uri-handlers (car pair) (cdr pair)))
   (serve/servlet geeklog-servlet-uri
                  #:launch-browser? #f
                  #:listen-ip #f

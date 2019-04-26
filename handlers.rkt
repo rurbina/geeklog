@@ -2,20 +2,29 @@
 
 #| geeklog default handlers |#
 
-(provide (rename-out [geeklog/handlers handlers]))
+(provide default-handlers)
 
-(require geeklog)
-
-(define handlers '(["info" . ,info]))
+(struct gldoc (headers body))
 
 ;; print out some server info
-(define (info req path headers settings)
-  (format "<html><head><title>~a</title></head><body><h1>Server info</h1><h2>settings</h2>~a</body></html>"
-          (cdr (first (filter (lambda (h) (symbol=? (car h) 'host)) headers)))
+(define (handler-cache req path headers settings)
+  (format "<html><head><title>Cached</title></head><body><h1>Server info</h1><h2>Cache dump</h2>~a</body></html>\n"
           (string-join
-           (for/list ([h (hash-keys site-settings)])
-             (format "<h3>~a</h3><dl>~a</dl>" h
-                     (string-join
-                      (for/list ([k (hash-keys (hash-ref site-settings h))])
-                        (format "<dt>~a</dt><dd>~v</dd>" k (hash-ref (hash-ref site-settings h) k))))))
-           "\n")))
+           (for/list ([key (hash-keys (hash-ref settings 'cache null))])
+             (format "<p><b>~a</b></p>\n" key)))))
+
+(define (handler-categories req path headers settings)
+  (let ([cats (make-hash)]
+        [headers (make-hash '((title "Categories")))]
+        [body ""])
+    (for ([item (hash-ref settings 'cache)])
+      (for ([cat (hash-ref 'categories (vector-ref (struct->vector item) 0))])
+        (hash-set! cats cat (+ 1 (hash-ref cats cat 0)))))
+    (set! body
+          (string-join
+           (for/list ([sorted (sort (hash-keys cats) string<?)])
+             (format "- [[category/~a][~a]] (~a)\n" sorted sorted (hash-ref cats sorted)))))
+    (cons "templatify" (cons headers body))))
+     
+(define default-handlers `(["cached" . ,handler-cache]
+                           ["categories" . ,handler-categories]))
