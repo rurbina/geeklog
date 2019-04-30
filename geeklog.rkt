@@ -1,6 +1,6 @@
 #lang racket
 
-#| main.rkt https://github.com/rurbina/geeklog |#
+#| geeklog.rkt https://github.com/rurbina/geeklog |#
 
 (provide geeklog
          geeklog-uri
