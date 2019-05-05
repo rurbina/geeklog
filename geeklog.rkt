@@ -354,7 +354,7 @@
             (hash-ref opts 'width "100%")
             (hash-ref opts 'height "450")
             (cond [(hash-has-key? opts 'playlist)
-                   (format (string-append 
+                   (format (string-append
                             "https://w.soundcloud.com/player/?"
                             "url=https%3A//api.soundcloud.com/playlists/~a"
                             "&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true"
@@ -518,11 +518,11 @@
   <!-- playlist content is mirrored here -->
 
   <div class=\"sm2-playlist-wrapper\">
-    
+
     <ul class=\"sm2-playlist-bd\">
      ~a
     </ul>
-  
+
   </div>
 
   <div class=\"sm2-extra-controls\">
@@ -640,7 +640,7 @@
                                            [cover . #f]
                                            [artwork . #f]))])
     (cond [(hash-has-key? opts 'id)
-           (format 
+           (format
             (string-append "<!-- 4shared-audio -->\n"
                            "<iframe src='http://www.4shared.com/web/embed/audio/~a/~a"
                            "?type=~a"
@@ -680,6 +680,23 @@
                 (hash-ref options 'level)
                 (ratamarkup-process-inline text #:options options)))))
 
+(define (rm-quote text
+                  #:options [options (make-hash '((null . null)))]
+                  #:tokens  [tokens '()])
+  (string-join
+   (list
+    "<figure class=\"quote\">\n"
+    (format "<blockquote>~a</blockquote>\n"
+            (ratamarkup-process text #:options options))
+    (format "<figcaption>~a</figcaption>\n"
+            (ratamarkup-process-inline (cdr (first tokens)) #:options options))
+    "</figure>\n\n")))
+
+(define (rm-raw text
+                   #:options [globals (make-hash '((null . null)))]
+                   #:tokens  [tokens '()])
+  text)
+
 (ratamarkup-add-section-processor 'orgtbl            rm-orgtbl)
 (ratamarkup-add-section-processor 'blog              rm-blog)
 (ratamarkup-add-section-processor 'wpblog            rm-wpblog)
@@ -696,6 +713,8 @@
 (ratamarkup-add-section-processor 'include           rm-include)
 (ratamarkup-add-section-processor '4shared-audio     rm-4shared-audio)
 (ratamarkup-add-section-processor 'more              rm-more)
+(ratamarkup-add-section-processor 'raw               rm-raw)
+(ratamarkup-add-section-processor 'quote             rm-quote)
 
 ;;; transform modes
 
@@ -1141,7 +1160,7 @@
     (set! template-path (build-path (hash-ref settings 'base-path ".") (hash-ref settings 'template)))
     (set! template-path (find-relative-path (current-directory) template-path))
     (eval `(include-template ,(path->string template-path)) tns)))
-  
+
 
 ;; launch the uri-based servlet
 (define (geeklog-uri #:port [port 8099] #:path [path "."])
@@ -1216,7 +1235,7 @@
                 (cons 'headers (gldoc-headers geekdoc))
                 (cons 'default-settings settings)
                 (cons 'include (lambda (name) (gldoc-body (load-doc name #:settings settings)))))])
-      (namespace-set-variable-value! (car var) (cdr var) #f tns))    
+      (namespace-set-variable-value! (car var) (cdr var) #f tns))
     ;; template path must be relative, don't ask me why
     (set! template-path (build-path (hash-ref settings 'base-path ".") (hash-ref settings 'template)))
     (set! template-path (find-relative-path (current-directory) template-path))
