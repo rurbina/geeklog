@@ -245,30 +245,39 @@
           (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
         (string-append output top break footer)))))
 
+(define rm-wpblog-cache-hash (make-hash))
+
 (define (rm-wpblog text
                  #:options [options (make-hash '((null . null)))]
                  #:tokens  [tokens '()])
   (let ([settings (hash-ref options 'geeklog-settings default-settings)]
+        [items 'null]
         [blog-options (hashify-tokens tokens
                                       #:symbolic-keys '(tags no-tags sort)
                                       #:scalar-keys   '(sort future reverse level no-past))])
+    (set! items
+          (if (and (hash-has-key? blog-options 'cache_key)
+                   (hash-has-key? rm-wpblog-cache-hash (hash-ref blog-options 'cache_key)))
+              (hash-ref rm-wpblog-cache-hash (hash-ref blog-options 'cache_key))
+              (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
+                           #:no-tags    (hash-ref blog-options 'no-tags '(draft))
+                           #:sort       (hash-ref blog-options 'sort 'timestamp)
+                           #:reverse    (if (hash-has-key? blog-options 'reverse) #f #t)
+                           #:no-future  (if (hash-has-key? blog-options 'future) #f #t)
+                           #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
+                           #:settings   settings)))
+    (when (and (hash-has-key? blog-options 'cache_key)
+               (not (hash-has-key? rm-wpblog-cache-hash (hash-ref blog-options 'cache_key))))
+      (hash-set! rm-wpblog-cache-hash (hash-ref blog-options 'cache_key) items))
     (for/fold ([output ""])
-              ([doc (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
-                                 #:no-tags    (hash-ref blog-options 'no-tags '(draft))
-                                 #:sort       (hash-ref blog-options 'sort 'timestamp)
-                                 #:reverse    (if (hash-has-key? blog-options 'reverse) #f #t)
-                                 #:no-future  (if (hash-has-key? blog-options 'future) #f #t)
-                                 #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
-                                 #:settings   settings)])
+              ([doc items])
       (let ([body (parse-body (gldoc-body doc)
                               (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
                               #:options options
                               #:settings settings)]
             [tns (make-base-namespace)]
             [top ""]
-            [entry ""]
             [has-break #f]
-            [footer ""]
             [level (hash-ref blog-options 'level "2")]
             [break ""]
             [template-path ""]
@@ -957,8 +966,10 @@
                             (hash-ref headers 'transform (hash-ref settings 'default-transform))
                             #:settings settings)))
       (set! result (gldoc headers body))
-      (eprintf "	cached ~a\n" reqname)
-      (hash-set! cache reqname result))
+      (eprintf "	cached (not really) ~a\n" reqname)
+      ; disable for now
+      ;(hash-set! cache reqname result)
+      )
     result))
 
 (define (make-link href [text ""]
@@ -1126,22 +1137,22 @@
       (set! handler (hash-ref uri-handlers item)))
     (printf "HANDLER: ~a " handler)
     (set! output (handler req path (request-headers req) settings))
-    (printf "TIME: ~a ms ~n"  (- (current-milliseconds) start-time))
-    (eprintf "OUTPUT: ~a\n" output)
-    (when (pair? output)
-      (when (number? (car output))
-        (set! response-code (car output))
-        (set! response-bytes (cdr output))
-        (set! output
-              (format "<html><head><title>404 Not Found</title></head><body><p>Not found: ~a</p></body></html>\n"
-                      path)))
-      (when (string=? (car output) "templatify")
-        (set! output (templatify (gldoc (cadr output) (cddr output)) #:settings settings))))
+    (printf "TIME: ~a ms "  (- (current-milliseconds) start-time))
+    (when (and (pair? output) (number? (car output)))
+      (set! response-code (car output))
+      (set! response-bytes (cdr output))
+      (set! output (format "<html><head><title>404 Not Found</title></head><body><p>Not found: ~a</p></body></html>\n" path)))
+    (when (and (pair? output) (string? (car output)) (string=? (car output) "templatify"))
+      (set! output (templatify (gldoc (cadr output) (cddr output)) #:settings settings)))
+    (eprintf "CODE: ~v\n" response-code)
     (response/full response-code
                    response-bytes
                    (current-seconds) TEXT/HTML-MIME-TYPE
                    headers
                    (list (string->bytes/utf-8 output)))))
+
+;; include cache
+(define include-cache (make-hash))
 
 ;; apply template
 (define (templatify geekdoc
@@ -1154,7 +1165,15 @@
                      (cons 'headers  (gldoc-headers geekdoc))
                      (cons 'timing 0)
                      (cons 'default-settings  settings)
-                     (cons 'include  (lambda (name) (gldoc-body (load-doc name #:settings settings)))))])
+                     (cons 'include-nocache  (lambda (name) (gldoc-body (load-doc name #:settings settings))))
+                     (cons 'include  (lambda (name (cacheable #f))
+                                       (let ([load (lambda (name) (gldoc-body (load-doc name #:settings settings)))])
+                                         (when (and cacheable (not (hash-has-key? include-cache name)))
+                                           (eprintf "INCLUDE CACHE ~a " name)
+                                           (hash-set! include-cache name (load name)))
+                                         (if cacheable
+                                             (hash-ref include-cache name)
+                                             (load name))))))])
       (namespace-set-variable-value! (car var) (cdr var) #f tns))
     ;; template path must be relative, don't ask me why
     (set! template-path (build-path (hash-ref settings 'base-path ".") (hash-ref settings 'template)))
