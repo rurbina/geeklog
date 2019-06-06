@@ -10,7 +10,9 @@
                      [site-settings     geeklog-site-settings])
          (struct-out gldoc))
 
-(require web-server/servlet
+(require geeklog/structs
+         geeklog/load
+         web-server/servlet
          web-server/servlet-env
          web-server/templates
          xml
@@ -725,24 +727,6 @@
 (ratamarkup-add-section-processor 'raw               rm-raw)
 (ratamarkup-add-section-processor 'quote             rm-quote)
 
-;;; transform modes
-
-(define (transform-ratamarkup text
-                              #:settings [settings default-settings]
-                              #:options [options (make-hash `((geeklog-settings . ,default-settings)))])
-  (unless (eq? settings default-settings)
-    (hash-set! options 'geeklog-settings settings))
-  (ratamarkup-process text #:options options))
-
-(define (transform-passthrough text
-                              #:settings [settings default-settings]
-                              #:options [options (make-hash `((geeklog-settings . ,default-settings)))])
-  text)
-
-(define transforms (make-hash `([ratamarkup  . ,transform-ratamarkup]
-                                [passthrough . ,transform-passthrough]
-                                [passthru    . ,transform-passthrough])))
-
 ;;; table rendering utility function
 
 (struct html-table (rows options))
@@ -826,8 +810,6 @@
 
 ;;; documents
 
-(struct gldoc (headers body))
-
 ;; search for documents
 (define (search-docs
          #:tags            [tags         '()]
@@ -879,193 +861,6 @@
     (set! results (sort results (lambda (a b) (gldoc-sort a b sort-key))))
     (if sort-reverse (reverse results) results)))
 
-;; gldoc sorting function
-(define (gldoc-sort a b key)
-  (let ([dk (lambda (doc key) (hash-ref (gldoc-headers doc) key
-                                       (hash-ref (gldoc-headers doc) 'name)))])
-    (let ([ka (dk a key)]
-          [kb (dk b key)])
-      (cond [(and (number? ka) (number? kb)) (< ka kb)]
-            [else (string<? ka kb)]))))
-
-;; parse a body of text (dispatches transforms)
-(define (parse-body text
-                    transform-type
-                    #:settings [settings default-settings]
-                    #:options [options null])
-  (when (null? options)
-    (set! options (make-hash `((geeklog-settings . ,settings)))))
-  ((hash-ref transforms transform-type) text #:settings settings #:options options))
-
-;; remove accents and stuff
-(define (unaccent-string text)
-  (regexp-replaces (string-downcase text)
-                   '([#px" " "_"]
-                     [#px"[á]" "a"]
-                     [#px"[é]" "e"]
-                     [#px"[í]" "i"]
-                     [#px"[ó]" "o"]
-                     [#px"[ú]" "u"]
-                     [#px"[ü]" "u"]
-                     [#px"[ñ]" "n"])))
-
-;; load a geeklog document, which is basically headers\n\nbody
-(define (load-doc name
-                  #:path            [path null]
-                  #:headers-only    [nobody #f]
-                  #:settings        [settings default-settings])
-  (let ([reqname name]
-        [filename path]
-        [whole ""]
-        [doc null]
-        [tmp null]
-        [body null]
-        [headers null]
-        [search-path null]
-        [start-time (current-milliseconds)]
-        [result null]
-        [cache (hash-ref settings 'cache)])
-    ;; if it's a headers-only request, check if cached
-    (when (and nobody (hash-has-key? cache reqname))
-      (eprintf "	cache hit: ~a\n" reqname)
-      (set! result (hash-ref cache reqname)))
-    ;; otherwise, load it
-    (when (null? result)
-      (when nobody (eprintf "	cache miss: ~a\n" reqname))
-      ;; find the file
-      (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
-      (when (path? path) (set! name (last (explode-path path))))
-      (when (null? filename) (set! filename "non-existing-file"))
-      ;; try all suffixes
-      (for ([suffix (hash-ref settings 'suffixes)]
-            #:break (file-exists? filename))
-        (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix))))
-      ;; try again but removing accents
-      (when (and (not (file-exists? filename)) (not (string=? name (unaccent-string name))))
-        (set! name (unaccent-string name))
-        (for ([suffix (hash-ref settings 'suffixes)]
-              #:break (file-exists? filename))
-          (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix)))))
-      (unless (file-exists? filename)
-        ;; given up, croak
-        (raise (make-exn:fail:filesystem
-                (format "document ~a not found as ~a in base ~a data ~a, suffixes ~a"
-                        name filename
-                        (hash-ref settings 'base-path)
-                        (hash-ref settings 'data-path)
-                        (hash-ref settings 'suffixes))
-                (current-continuation-marks))))
-      ;; read and parse
-      (set! whole (file->string filename))
-      (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
-      (set! headers (parse-headers (first tmp) #:filename filename #:settings settings))
-      (set! body
-            (if nobody
-                (last tmp)
-                (parse-body (last tmp)
-                            (hash-ref headers 'transform (hash-ref settings 'default-transform))
-                            #:settings settings)))
-      (set! result (gldoc headers body))
-      (eprintf "	cached (not really) ~a\n" reqname)
-      ; disable for now
-      ;(hash-set! cache reqname result)
-      )
-    result))
-
-(define (make-link href [text ""]
-                   #:title [title ""]
-                   #:extra [extra ""])
-  (when (not (string=? title "")) (set! extra (string-append extra (format " title=\"~a\"" (xexpr->string title)))))
-  (when (not (string=? extra "")) (set! extra (xexpr->string (regexp-replace #px"^\\s*" extra " "))))
-  (format "<a href=\"~a\"~a>~a</a>"
-          href
-          extra
-          (if (string=? text "") href text)))
-
-;; parse a geeklog document headers
-(define (parse-headers text
-                       #:filename [filename ""]
-                       #:settings [settings default-settings])
-  (let ([lines (regexp-split #px"\n" text)] [headers (make-hash)])
-    ;; set site presets if applyable
-    (when (hash-has-key? settings 'default-headers)
-      (for ([pair (hash-ref settings 'default-headers)])
-        (hash-set! headers (car pair) (cdr pair))))
-    ;; load headers from file
-    (map (lambda (line)
-           (let ([matches null])
-             (set!-values (matches) (flatten
-                                       (regexp-match*
-                                        #px"(?m:^(.*?)\\s*:\\s*(.*)\\s*$)"
-                                        line
-                                        #:match-select cdr)))
-             (unless (empty? matches)
-                 (hash-set! headers (string->symbol (first matches)) (last matches)))))
-         lines)
-    ;; some magic for booleans
-    (for ([key (hash-keys headers)])
-      (let ([value (hash-ref headers key)])
-        (when (string? value)
-          (when (string=? value "#t") (hash-set! headers key #t))
-          (when (string=? value "#f") (hash-set! headers key #f)))))
-    ;; these should always exist
-    (for ([key '(title author tags categories keywords description comment)])
-      (unless (hash-has-key? headers key) (hash-set! headers key "")))
-    ;; (eprintf "\theaders so far: ~v\n" headers)
-    ;; some transforms
-    (hash-set*! headers
-                ;; categories should be tokenized, not just split on whitespace
-                'categories (for/list ([cat (regexp-split #px"\\s+" (hash-ref headers 'categories ""))]
-                                       #:when (> (string-length cat) 0))
-                              cat)
-                'tags (for/list ([tag (regexp-split #px"\\s+" (hash-ref headers 'tags ""))]
-                                 #:when (> (string-length tag) 0))
-                        (string->symbol tag))
-                'transform (string->symbol
-                            (hash-ref headers 'transform
-                                      (symbol->string (hash-ref settings 'default-transform)))))
-    (when (path? filename)
-      (hash-set! headers
-                 'mtime
-                 (file-or-directory-modify-seconds filename))
-      (hash-set! headers
-                 'name
-                 (regexp-replace #px"\\..*$" (path->string (file-name-from-path filename)) "")))
-    (for ([key '(author timestamp description keywords)])
-      (unless (hash-has-key? headers key) (hash-set! headers key "")))
-    ;; parse the timestamp
-    (hash-set!
-     headers
-     'timestamp
-     (let ([ts (hash-ref headers 'timestamp)])
-       (cond [(regexp-match? #px"^\\s*(\\d+)\\s*$" ts) (string->number ts)]
-             [(regexp-match? #px"\\d{4}.\\d{2}.\\d{2}" ts)
-              (let ([m (regexp-match
-                        #px"(\\d{4}).(\\d{2}).(\\d{2})\\s*T?((\\d+):?(\\d+)?:?(\\d+)?(\\s*([AaPp][Mm]))?)?"
-                        ts)]
-                    [convert (lambda (i) (if (string? i) (or (string->number i) 0) 0))]
-                    [d null])
-                (find-seconds (convert (eighth m)) ;second
-                              (convert (seventh m)) ;minute
-                              (convert (sixth m)) ;hour
-                              (string->number (fourth m)) ;day
-                              (string->number (third m)) ;month
-                              (string->number (second m)) ;year
-                              #t ;localtime
-                              ))]
-             [else (hash-ref headers 'mtime 0)])))
-    ;; these are some pretty-print items
-    (hash-set*!
-     headers
-     'link-format (lambda (text) (make-link (hash-ref headers 'name) text
-                                       #:title (hash-ref headers 'title "")))
-     'title-link (make-link (hash-ref headers 'name)
-                            (hash-ref headers 'title "")
-                            #:title (hash-ref headers 'title ""))
-     'mtime-format-date ((hash-ref settings 'format-date) (hash-ref headers 'mtime))
-     'timestamp-format-date ((hash-ref settings 'format-date) (hash-ref headers 'timestamp))
-     'timestamp-format-date-time ((hash-ref settings 'format-date-time) (hash-ref headers 'timestamp)))
-    headers))
 
 (define (parse-timestamp ts (default 0))
   (cond [(regexp-match? #px"^\\s*(\\d+)\\s*$" ts) (string->number ts)]
@@ -1127,6 +922,7 @@
         [handler (hash-ref uri-handlers 'default)]
         [settings default-settings]
         [response-code 200]
+        [mime-type TEXT/HTML-MIME-TYPE]
         [response-bytes #"OK"])
     (printf "REQUEST: ~a ~a " hostname path)
     (set! settings (hash-ref site-settings hostname default-settings))
@@ -1138,16 +934,23 @@
     (printf "HANDLER: ~a " handler)
     (set! output (handler req path (request-headers req) settings))
     (printf "TIME: ~a ms "  (- (current-milliseconds) start-time))
-    (when (and (pair? output) (number? (car output)))
-      (set! response-code (car output))
-      (set! response-bytes (cdr output))
-      (set! output (format "<html><head><title>404 Not Found</title></head><body><p>Not found: ~a</p></body></html>\n" path)))
-    (when (and (pair? output) (string? (car output)) (string=? (car output) "templatify"))
-      (set! output (templatify (gldoc (cadr output) (cddr output)) #:settings settings)))
-    (eprintf "CODE: ~v\n" response-code)
+    (cond
+      [(and (pair? output) (number? (car output)))
+       (set! response-code (car output))
+       (set! response-bytes (cdr output))
+       (set! output (format "<html><head><title>404 Not Found</title></head><body><p>Not found: ~a</p></body></html>\n" path))]
+      [(and (pair? output) (string? (car output)) (string=? (car output) "templatify"))
+       (set! output (templatify (gldoc (cadr output) (cddr output)) #:settings settings))]
+      [(hash? output)
+       (set! response-code  (hash-ref output 'response-code 200))
+       (set! mime-type      (hash-ref output 'mime-type mime-type))
+       (set! headers        (hash-ref output 'headers headers))
+       (set! output (hash-ref output 'output ""))])
+    (printf "CODE: ~v\n" response-code)
     (response/full response-code
                    response-bytes
-                   (current-seconds) TEXT/HTML-MIME-TYPE
+                   (current-seconds)
+                   mime-type
                    headers
                    (list (string->bytes/utf-8 output)))))
 
