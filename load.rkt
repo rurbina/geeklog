@@ -113,7 +113,7 @@
                        #:settings settings)
   (let ([lines (regexp-split #px"\n" text)]
         [headers (make-hash)]
-        [timestamp-date null]
+        [timestamp-date (seconds->date (current-seconds))]
         [tzoffset null])
     ;; set site presets if applyable
     (when (hash-has-key? settings 'default-headers)
