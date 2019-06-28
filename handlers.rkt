@@ -4,11 +4,11 @@
 
 (provide default-handlers)
 
-(require geeklog/search
+(require (only-in geeklog/search search-docs)
+         geeklog/structs
          web-server/http/request-structs
-         net/url-structs)
-
-(struct gldoc (headers body))
+         net/url-structs
+         sha)
 
 (define (render-cell cell) (format "  <td>~a</td>\n" cell))
 
@@ -58,28 +58,50 @@
   (let ([result (make-hash)]
         [hostname (hash-ref settings 'hostname "localhost")]
         [scheme   (hash-ref settings 'scheme   "http")]
-        [title    (hash-ref settings 'title (hash-ref settings 'hostname "localhost"))])
-    (printf "\n\nFEED settings: ~a\n\n" settings)
+        [title    (hash-ref settings 'title (hash-ref settings 'hostname "localhost"))]
+        [get-name (lambda (doc) (hash-ref (gldoc-headers doc) 'name))]
+        [base-uri null]
+        [docs (search-docs #:tags       '(blog) ;(hash-ref blog-options 'tags '(blog))
+                           #:no-tags    '(draft) ;(hash-ref blog-options 'no-tags '(draft))
+                           #:sort       'timestamp ;(hash-ref blog-options 'sort 'timestamp)
+                           #:reverse    #t ;(if (hash-has-key? blog-options 'reverse) #f #t)
+                           #:no-future  #t ;(if (hash-has-key? blog-options 'future) #f #t)
+                           #:newer-than 0 ;(if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
+                           #:settings   settings)])
+    (set! base-uri (format "~a://~a" scheme hostname))
     (hash-set! result 'mime-type #"application/atom+xml")
-    (hash-set! result 'mime-type #"text/plain")
+    ;(hash-set! result 'mime-type #"text/plain; charset=utf-8")
     (hash-set! result 'output
               (string-join
                (list
                 "<?xml version=\"1.0\"?>"
                 "<feed xmlns=\"http://www.w3.org/2005/Atom\">"
-                (format "<link href=\"~a://~a~a\" rel=\"self\"/>" scheme hostname path)
+                (format "<link href=\"~a~a\" rel=\"self\"/>" base-uri path)
                 (format "<title>~a</title>" title)
                 ;; FIXME: required
                 "<updated>2003-12-13T18:30:02Z</updated>"
+                ""
                 ;; "<author><name>John Doe</name></author>"
-                ;;"<id>urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6</id>"
-                "<entry>"
-                "<title>Atom-Powered Robots Run Amok</title>"
-                "<link href=\"http://example.org/2003/12/13/atom03\"/>"
-                "<id>urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a</id>"
-                "<updated>2003-12-13T18:30:02Z</updated>"
-                "<summary>Some text.</summary>"
-                "</entry>"
+                (format "<id>~a~a</id>" base-uri path)
+                (string-join
+                 (for/list ([doc docs])
+                   (let ([uri (string-join (list base-uri (get-name doc)) "/")]
+                         [summary (lambda (doc)
+                                    (let ([body (gldoc-body doc)])
+                                      (if (regexp-match #px"(?m:^§more)" body)
+                                          (regexp-replace #px"(?s:\n§more.*)" body "")
+                                          (substring body 0 50))))])
+                     (string-join
+                      (list
+                       "<entry>"
+                       (format "<title>~a</title>" (hash-ref (gldoc-headers doc) 'title))
+                       (format "<link href=\"~a\"/>" uri)
+                       (format "<id>~a</id>" uri);(bytes->hex-string (sha1 (string->bytes/utf-8 uri))))
+                       (format "<author><name>~a</name></author>" (hash-ref (gldoc-headers doc) 'author))
+                       (format "<updated>~a</updated>" (hash-ref (gldoc-headers doc) 'timestamp-iso))
+                       (format "<summary>~a</summary>\n</entry>" (summary doc)))
+                      "\n\t")))
+                 "\n\n")
                 "</feed>")
                "\n"))
     result))

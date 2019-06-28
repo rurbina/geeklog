@@ -1,9 +1,9 @@
 #lang racket
 
-(provide all-defined-out)
-
 (require geeklog/load
          geeklog/structs)
+
+(provide search-docs)
 
 ;; search for documents
 (define (search-docs

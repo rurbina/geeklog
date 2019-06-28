@@ -3,6 +3,8 @@
 (require geeklog/structs
          racket/date
          xml
+         ;gregor
+         tzinfo
          (rename-in ratamarkup/ratamarkup
                     [ratamarkup ratamarkup-process]
                     [ratamarkup-inline ratamarkup-process-inline]))
@@ -41,7 +43,11 @@
 ;; load a geeklog document, which is basically headers\n\nbody
 (define (load-doc name
                   #:path            [path null]
-                  #:headers-only    [nobody #f]
+                  #:headers-only    [nobody #f] ; do not process body, only headers
+                  #:unparsed        [no-parse #f] ; load unparsed contents
+                  #:summary-only    [summary-only #f] ; do not parse whole body, only summary
+                  #:summary-stop    [summary-stop #px"(?m:^§more)"] ; regexp to determine summary's end
+                  #:summary-chars   [summary-chars 100] ; or how many chars to load as summary if regexp fails
                   #:settings        settings)
   (let ([reqname name]
         [filename path]
@@ -105,7 +111,10 @@
 (define (parse-headers text
                        #:filename [filename ""]
                        #:settings settings)
-  (let ([lines (regexp-split #px"\n" text)] [headers (make-hash)])
+  (let ([lines (regexp-split #px"\n" text)]
+        [headers (make-hash)]
+        [timestamp-date null]
+        [tzoffset null])
     ;; set site presets if applyable
     (when (hash-has-key? settings 'default-headers)
       (for ([pair (hash-ref settings 'default-headers)])
@@ -153,6 +162,25 @@
     (for ([key '(author timestamp description keywords)])
       (unless (hash-has-key? headers key) (hash-set! headers key "")))
     ;; parse the timestamp
+    (let ([ts (hash-ref headers 'timestamp)])
+      (cond [(regexp-match? #px"^\\s*(\\d+)\\s*$" ts) (string->number ts)]
+            [(regexp-match? #px"\\d{4}.\\d{2}.\\d{2}" ts)
+             (let ([m (regexp-match
+                       #px"(\\d{4}).(\\d{2}).(\\d{2})\\s*T?((\\d+):?(\\d+)?:?(\\d+)?(\\s*([AaPp][Mm]))?)?"
+                       ts)]
+                   [convert (lambda (i)
+                              (cond [(string? i) (string->number i)]
+                                    [(number? i) i]
+                                    [(boolean? i) 0]))]
+                   [matches null]
+                   [converted (list)]
+                   [d null])
+               (set! converted (map (lambda (x) (convert x)) (rest m)))
+               (set! matches (append (take converted 3) (take (drop converted 4) 3)))
+               (set! matches (append (reverse matches) (list 0 0 #f 0)))
+               (printf "\n\nSEARCH date items: ~v\n\n" matches)
+               (set! timestamp-date (apply make-date matches)))]
+            [else (make-date 0 0 0 1 1 1970 0 0 #f 0)]))
     (hash-set!
      headers
      'timestamp
@@ -173,6 +201,16 @@
                               #t ;localtime
                               ))]
              [else (hash-ref headers 'mtime 0)])))
+    (date-display-format 'iso-8601)
+    (set! tzoffset
+          (if (tzid-exists? (hash-ref settings 'timezone))
+              (regexp-replace #px"^([-+])(\\d:\\d\\d)$"
+                              (regexp-replace #px"^(\\d)"
+                                              (format "~a:00"
+                                                      (/ (tzoffset-utc-seconds (utc-seconds->tzoffset (hash-ref settings 'timezone) 0)) 3600))
+                                              "+\\1")
+                              "\\1\\$0\\2")
+              "Z"))
     ;; these are some pretty-print items
     (hash-set*!
      headers
@@ -183,7 +221,9 @@
                             #:title (hash-ref headers 'title ""))
      'mtime-format-date ((hash-ref settings 'format-date) (hash-ref headers 'mtime))
      'timestamp-format-date ((hash-ref settings 'format-date) (hash-ref headers 'timestamp))
-     'timestamp-format-date-time ((hash-ref settings 'format-date-time) (hash-ref headers 'timestamp)))
+     'timestamp-format-date-time ((hash-ref settings 'format-date-time) (hash-ref headers 'timestamp))
+     'timestamp-iso (string-join (list (date->string timestamp-date #t)
+                                       tzoffset) ""))
     headers))
 
 ;; parse a body of text (dispatches transforms)
