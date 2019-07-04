@@ -1,7 +1,11 @@
-#lang racket
+#lang racket/base
 
 (require geeklog/structs
          racket/date
+         racket/list
+         racket/string
+         racket/file
+         racket/path
          xml
          ;gregor
          tzinfo
@@ -40,72 +44,72 @@
                      [#px"[ü]" "u"]
                      [#px"[ñ]" "n"])))
 
-;; load a geeklog document, which is basically headers\n\nbody
 (define (load-doc name
                   #:path            [path null]
-                  #:headers-only    [nobody #f] ; do not process body, only headers
-                  #:unparsed        [no-parse #f] ; load unparsed contents
+                  #:headers-only    [headers-only #f] ; do not process body, only headers
+                  #:unparsed        [unparsed #f] ; load unparsed body
                   #:summary-only    [summary-only #f] ; do not parse whole body, only summary
                   #:summary-stop    [summary-stop #px"(?m:^§more)"] ; regexp to determine summary's end
-                  #:summary-chars   [summary-chars 100] ; or how many chars to load as summary if regexp fails
+                  #:summary-chars   [summary-chars 200] ; or how many chars to load as summary if regexp fails
                   #:settings        settings)
-  (let ([reqname name]
-        [filename path]
-        [whole ""]
-        [doc null]
-        [tmp null]
-        [body null]
-        [headers null]
-        [search-path null]
-        [start-time (current-milliseconds)]
-        [result null]
-        [cache (hash-ref settings 'cache)])
-    ;; if it's a headers-only request, check if cached
-    (when (and nobody (hash-has-key? cache reqname))
-      (eprintf "	cache hit: ~a\n" reqname)
-      (set! result (hash-ref cache reqname)))
-    ;; otherwise, load it
-    (when (null? result)
-      (when nobody (eprintf "	cache miss: ~a\n" reqname))
-      ;; find the file
-      (set! search-path (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path)))
-      (when (path? path) (set! name (last (explode-path path))))
-      (when (null? filename) (set! filename "non-existing-file"))
-      ;; try all suffixes
-      (for ([suffix (hash-ref settings 'suffixes)]
-            #:break (file-exists? filename))
-        (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix))))
-      ;; try again but removing accents
-      (when (and (not (file-exists? filename)) (not (string=? name (unaccent-string name))))
-        (set! name (unaccent-string name))
-        (for ([suffix (hash-ref settings 'suffixes)]
-              #:break (file-exists? filename))
-          (set! filename (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path) (string-append name suffix)))))
-      (unless (file-exists? filename)
-        ;; given up, croak
-        (raise (make-exn:fail:filesystem
-                (format "document ~a not found as ~a in base ~a data ~a, suffixes ~a"
-                        name filename
-                        (hash-ref settings 'base-path)
-                        (hash-ref settings 'data-path)
-                        (hash-ref settings 'suffixes))
-                (current-continuation-marks))))
-      ;; read and parse
-      (set! whole (file->string filename))
-      (set! tmp (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole #:match-select cdr)))
-      (set! headers (parse-headers (first tmp) #:filename filename #:settings settings))
-      (set! body
-            (if nobody
-                (last tmp)
-                (parse-body (last tmp)
-                            (hash-ref headers 'transform (hash-ref settings 'default-transform))
-                            #:settings settings)))
-      (set! result (gldoc headers body))
-      (eprintf "	cached (not really) ~a\n" reqname)
-      ; disable for now
-      ;(hash-set! cache reqname result)
-      )
-    result))
+  (let ([filename (if (path? path) path #f)]
+        [loaded   null]
+        [whole-file null]
+        [split-file null]
+        [headers    null]
+        [body       null]
+        [stime (current-milliseconds)]
+        [reqnames (list (if (path? path) (path->string (last (explode-path path))) name))]
+        [path     (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path))])
+    (set! reqnames (list (first reqnames) (unaccent-string (first reqnames))))
+    (unless filename
+      ;; try with all possible names and suffixes
+      (for ([fname  reqnames]
+            [suffix (hash-ref settings 'suffixes)]
+            #:break (and (path? filename) (file-exists? filename)))
+        (set! filename (build-path path (string-append fname suffix)))))
+    ;; not found? croak!
+    (when (or (null? filename) (not (file-exists? filename)))
+      (eprintf "  \e[1mnew-loader:\e[0m not loaded ~a in ~a ms\n" name (- (current-milliseconds) stime))
+      (raise (make-exn:fail:filesystem
+              (format "document ~a not found as ~a in base ~a data ~a, suffixes ~a"
+                      name filename
+                      (hash-ref settings 'base-path)
+                      (hash-ref settings 'data-path)
+                      (hash-ref settings 'suffixes))
+              (current-continuation-marks))))
+    ;; read and parse
+    (if (or headers-only summary-only)
+        (begin
+          (let ([header-lines '()]
+                [headers-text ""]
+                [summary-body ""]
+                [infile (open-input-file filename #:mode 'text)])
+            (set! headers-text
+                  (do ([line "-"])
+                      ((or (not (string? line)) (string=? line ""))
+                       (string-join header-lines "\n"))
+                    (set! line (read-line infile))
+                    (set! header-lines (append header-lines (list line)))))
+            (close-input-port infile)
+            (set! split-file (list headers-text summary-body))))
+        (begin
+          (set! whole-file (file->string filename))
+          (set! split-file (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole-file #:match-select cdr)))))
+    (set! headers (parse-headers (first split-file) #:filename filename #:settings settings))
+    (set! body (cond (headers-only "")
+                     (unparsed
+                      (eprintf "  \e[34mloader: not really parsing ~a\e[0m\n" filename)
+                      (last split-file))
+                     (else
+                      (eprintf "  \e[34mloader: parsing ~a\e[0m\n" filename)
+                      (parse-body (last split-file)
+                                       (hash-ref headers 'transform (hash-ref settings 'default-transform))
+                                       #:settings settings))))
+    (hash-set! headers 'path filename)
+    (set! loaded (gldoc headers body))
+    loaded))
+
 
 ;; parse a geeklog document headers
 (define (parse-headers text
@@ -178,7 +182,6 @@
                (set! converted (map (lambda (x) (convert x)) (rest m)))
                (set! matches (append (take converted 3) (take (drop converted 4) 3)))
                (set! matches (append (reverse matches) (list 0 0 #f 0)))
-               (printf "\n\nSEARCH date items: ~v\n\n" matches)
                (set! timestamp-date (apply make-date matches)))]
             [else (make-date 0 0 0 1 1 1970 0 0 #f 0)]))
     (hash-set!
