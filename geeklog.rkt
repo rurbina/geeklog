@@ -12,6 +12,7 @@
 
 (require geeklog/structs
          geeklog/load
+         geeklog/search
          web-server/servlet
          web-server/servlet-env
          web-server/templates
@@ -261,13 +262,16 @@
           (if (and (hash-has-key? blog-options 'cache_key)
                    (hash-has-key? rm-wpblog-cache-hash (hash-ref blog-options 'cache_key)))
               (hash-ref rm-wpblog-cache-hash (hash-ref blog-options 'cache_key))
-              (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
-                           #:no-tags    (hash-ref blog-options 'no-tags '(draft))
-                           #:sort       (hash-ref blog-options 'sort 'timestamp)
-                           #:reverse    (if (hash-has-key? blog-options 'reverse) #f #t)
-                           #:no-future  (if (hash-has-key? blog-options 'future) #f #t)
-                           #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
-                           #:settings   settings)))
+              (search-docs #:tags         (hash-ref blog-options 'tags '(blog))
+                           #:no-tags      (hash-ref blog-options 'no-tags '(draft))
+                           #:sort         (hash-ref blog-options 'sort 'timestamp)
+                           #:reverse      (if (hash-has-key? blog-options 'reverse) #f #t)
+                           #:no-future    (if (hash-has-key? blog-options 'future) #f #t)
+                           #:newer-than   (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
+                           #:headers-only #f
+                           #:range-count  (string->number (hash-ref blog-options 'count "10"))
+                           #:unparsed     #t
+                           #:settings     settings)))
     (when (and (hash-has-key? blog-options 'cache_key)
                (not (hash-has-key? rm-wpblog-cache-hash (hash-ref blog-options 'cache_key))))
       (hash-set! rm-wpblog-cache-hash (hash-ref blog-options 'cache_key) items))
@@ -809,58 +813,6 @@
     hashed))
 
 ;;; documents
-
-;; search for documents
-(define (search-docs
-         #:tags            [tags         '()]
-         #:or-tags         [or-tags      '()]
-         #:no-tags         [no-tags      '()]
-         #:and-tags        [and-tags     '()]
-         #:headers-only    [headers-only #t]
-         #:sort            [sort-key     'name]
-         #:reverse         [sort-reverse #f]
-         #:no-future       [no-future    #f]
-         #:older-than      [before-secs  0]
-         #:newer-than      [after-secs   0]
-         #:settings        [settings     default-settings]
-         #:data-path       [data-path    null])
-  (when (null? data-path)
-    (set! data-path (string->path (string-append (hash-ref settings 'base-path) "/" (hash-ref settings 'data-path)))))
-  (let ([results '()] [file-path null] [now (current-seconds)])
-    (set! results
-          (for/list ([doc (for/list ([file (directory-list data-path)]
-                                     #:when (file-exists? (build-path data-path file)))
-                            (set! file-path (build-path data-path file))
-                            ;;(load-doc (path->string file-path) #:headers-only headers-only))]
-                            (with-handlers ([exn:fail? (lambda (e)
-                                                         (eprintf "\t\terror is ~v\n" e)
-                                                         void)])
-                              (eprintf "	\e[33msearch: \e[0m~v\n" (path->string file-path))
-                              (load-doc (path->string (path-replace-extension (last (explode-path file-path)) #""))
-                                        #:path file-path
-                                        #:settings settings
-                                        #:headers-only headers-only)))]
-                     #:when (and [gldoc? doc]
-                                 [or (empty? tags)
-                                     (subset? tags (hash-ref (gldoc-headers doc) 'tags '()))]
-                                 [or (empty? or-tags)
-                                     (not (empty? (set-intersect or-tags (hash-ref (gldoc-headers doc) 'tags '()))))]
-                                 [or (empty? and-tags)
-                                     (subset? and-tags (hash-ref (gldoc-headers doc) 'tags '()))]
-                                 [or (empty? no-tags)
-                                     (not (subset? no-tags (hash-ref (gldoc-headers doc) 'tags '())))]
-                                 [or (< (hash-ref (gldoc-headers doc) 'timestamp (add1 now)) now)
-                                     (not no-future)]
-                                 [or (= before-secs 0)
-                                     (< (hash-ref (gldoc-headers doc) 'timestamp before-secs) before-secs)]
-                                 [or (= after-secs 0)
-                                     (> (hash-ref (gldoc-headers doc) 'timestamp after-secs) after-secs)]
-                                 #t))
-            doc))
-    ;; sorting
-    (set! results (sort results (lambda (a b) (gldoc-sort a b sort-key))))
-    (if sort-reverse (reverse results) results)))
-
 
 (define (parse-timestamp ts (default 0))
   (cond [(regexp-match? #px"^\\s*(\\d+)\\s*$" ts) (string->number ts)]
