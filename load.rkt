@@ -7,30 +7,12 @@
          racket/file
          racket/path
          xml
-         ;gregor
          tzinfo
          (rename-in ratamarkup/ratamarkup
                     [ratamarkup ratamarkup-process]
                     [ratamarkup-inline ratamarkup-process-inline]))
 
 (define geeklog/load #t)
-
-;;; transform modes
-
-(define (transform-ratamarkup text
-                              #:settings settings
-                              #:options  options)
-  (ratamarkup-process text #:options options))
-
-(define (transform-passthrough text
-                              #:settings settings
-                              #:options  options)
-  text)
-
-(define transforms (make-hash `([ratamarkup  . ,transform-ratamarkup]
-                                [passthrough . ,transform-passthrough]
-                                [passthru    . ,transform-passthrough])))
-
 
 ;; remove accents and stuff
 (define (unaccent-string text)
@@ -98,14 +80,14 @@
           (set! split-file (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole-file #:match-select cdr)))))
     (set! headers (parse-headers (first split-file) #:filename filename #:settings settings))
     (set! body (cond (headers-only "")
-                     (unparsed
-                      (eprintf "  \e[34mloader: not really parsing ~a\e[0m\n" filename)
-                      (last split-file))
+                     (unparsed (last split-file))
                      (else
-                      (eprintf "  \e[34mloader: parsing ~a\e[0m\n" filename)
-                      (parse-body (last split-file)
-                                       (hash-ref headers 'transform (hash-ref settings 'default-transform))
-                                       #:settings settings))))
+                      (eprintf "  \e[34mloader: no longer parsing ~a\e[0m\n" filename)
+                      (last split-file)
+                      ;(parse-body (last split-file)
+                      ;                 (hash-ref headers 'transform (hash-ref settings 'default-transform))
+                      ;                 #:settings settings))
+                     )))
     (hash-set! headers 'path filename)
     (set! loaded (gldoc headers body))
     loaded))
@@ -229,14 +211,15 @@
                                        tzoffset) ""))
     headers))
 
-;; parse a body of text (dispatches transforms)
-(define (parse-body text
-                    transform-type
-                    #:settings settings
-                    #:options [options null])
-  (when (null? options)
-    (set! options (make-hash `((geeklog-settings . ,settings)))))
-  ((hash-ref transforms transform-type) text #:settings settings #:options options))
+;;; parse a body of text (dispatches transforms)
+;(define (parse-body text
+;                    transform-type
+;                    #:settings settings
+;                    #:options [options null])
+;  (when (null? options)
+;    (set! options (make-hash `((geeklog-settings . ,settings)))))
+;  (markup text transform-type #:settings settings #:options options))
+;;  ((hash-ref transforms transform-type) text #:settings settings #:options options))
 
 (define (make-link href [text ""]
                    #:title [title ""]
@@ -258,6 +241,5 @@
             [else (string<? ka kb)]))))
 
 (provide load-doc
-         gldoc-sort
-         parse-body)
+         gldoc-sort)
 
