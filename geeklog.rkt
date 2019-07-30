@@ -119,11 +119,12 @@
         (markup-doc doc #:settings s)
         null)))
 
-(define (do-load req path headers settings)
+(define (do-load req path headers settings #:path-parts path-parts)
   (let ([doc null]
         [errmsg ""]
-        [docname (path/param-path (last (url-path (request-uri req))))]
+        [docname null]
         [effective-mtime (box 0)])
+    (set! docname (string-join (map (lambda (n) (path/param-path n)) (url-path (request-uri req))) "/"))
     (hash-set! settings 'recursion-depth (add1 (hash-ref settings 'recursion-depth 1)))
     (hash-set! settings 'effective-mtime effective-mtime)
     (when (string=? docname "") (set! docname (hash-ref settings 'default-doc)))
@@ -166,12 +167,13 @@
     (printf "REQUEST: ~a ~a " hostname path)
     (set! settings (hash-ref site-settings hostname default-settings))
     (printf "SITE: ~a " (hash-ref settings 'name))
+    (printf "\e[1mPATH PARTS: ~a\e[0m " (url-path (request-uri req)))
     (when (string=? item "") (set! item (hash-ref settings 'default-doc)))
     (printf "ITEM: ~a " item)
     (when (hash-has-key? uri-handlers item)
       (set! handler (hash-ref uri-handlers item)))
     (printf "HANDLER: ~a " handler)
-    (set! output (handler req path (request-headers req) settings))
+    (set! output (handler req path (request-headers req) settings #:path-parts (url-path (request-uri req))))
     (printf "TIME: ~a ms "  (- (current-milliseconds) start-time))
     (cond
       [(and (pair? output) (number? (car output)))
