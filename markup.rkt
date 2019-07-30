@@ -312,6 +312,7 @@
                                                       #:unless (string=? "" (hash-ref hash key "")))
                                              (fixlist (hash-ref hash key ""))))))
     (hash-set*! search-options
+                'path    (hash-ref search-options 'path "")
                 'tags    (fixlist (hash-ref search-options 'tags ""))
                 'or-tags (fixlist (hash-ref search-options 'or-tags ""))
                 'no-tags (fixlists search-options '(not-tag not-tags no-tag no-tags
@@ -326,6 +327,7 @@
                             #:or-tags   (hash-ref search-options 'or-tags)
                             #:and-tags  (hash-ref search-options 'and-tags)
                             #:sort      (hash-ref search-options 'sort)
+                            #:path      (hash-ref search-options 'path)
                             #:settings  settings))
     (if (empty? docs)
         (ratamarkup-process "No se encontraron documentos." #:options options)

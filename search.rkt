@@ -22,9 +22,12 @@
          #:unparsed        [unparsed #f]
          #:range-start     [range-start 0]
          #:range-count     [range-count 10]
+         #:path            [path null]
          #:data-path       [data-path    null])
   (when (null? data-path)
     (set! data-path (string->path (string-append (hash-ref settings 'base-path) "/" (hash-ref settings 'data-path)))))
+  (when (and (string? path) (not (string=? path "")))
+    (set! data-path (build-path data-path (string->path path))))
   (let ([results '()] [file-path null] [now (current-seconds)])
     (set! results
           (for/list ([doc (for/list ([file (directory-list data-path)]
