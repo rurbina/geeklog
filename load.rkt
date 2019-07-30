@@ -28,6 +28,7 @@
 
 (define (load-doc name
                   #:path            [path null]
+                  #:path-prefix     [path-prefix null]
                   #:headers-only    [headers-only #f] ; do not process body, only headers
                   #:unparsed        [unparsed #f] ; load unparsed body
                   #:summary-only    [summary-only #f] ; do not parse whole body, only summary
@@ -78,16 +79,10 @@
         (begin
           (set! whole-file (file->string filename))
           (set! split-file (flatten (regexp-match* #px"^(?s:^(.*?)\n\n(.*))$" whole-file #:match-select cdr)))))
-    (set! headers (parse-headers (first split-file) #:filename filename #:settings settings))
+    (set! headers (parse-headers (first split-file) #:filename filename #:path-prefix path-prefix #:settings settings))
     (set! body (cond (headers-only "")
                      (unparsed (last split-file))
-                     (else
-                      (eprintf "  \e[34mloader: no longer parsing ~a\e[0m\n" filename)
-                      (last split-file)
-                      ;(parse-body (last split-file)
-                      ;                 (hash-ref headers 'transform (hash-ref settings 'default-transform))
-                      ;                 #:settings settings))
-                     )))
+                     (else (last split-file))))
     (hash-set! headers 'path filename)
     (set! loaded (gldoc headers body))
     loaded))
@@ -96,6 +91,7 @@
 ;; parse a geeklog document headers
 (define (parse-headers text
                        #:filename [filename ""]
+                       #:path-prefix [path-prefix null]
                        #:settings settings)
   (let ([lines (regexp-split #px"\n" text)]
         [headers (make-hash)]
@@ -145,6 +141,10 @@
       (hash-set! headers
                  'name
                  (regexp-replace #px"\\..*$" (path->string (file-name-from-path filename)) "")))
+    (when (not (null? path-prefix))
+      (hash-set! headers 'name
+                 (string-join (list (if (path? path-prefix) (string->path path-prefix) path-prefix)
+                                    (hash-ref headers 'name)) "/")))
     (for ([key '(author timestamp description keywords)])
       (unless (hash-has-key? headers key) (hash-set! headers key "")))
     ;; parse the timestamp
@@ -210,16 +210,6 @@
      'timestamp-iso (string-join (list (date->string timestamp-date #t)
                                        tzoffset) ""))
     headers))
-
-;;; parse a body of text (dispatches transforms)
-;(define (parse-body text
-;                    transform-type
-;                    #:settings settings
-;                    #:options [options null])
-;  (when (null? options)
-;    (set! options (make-hash `((geeklog-settings . ,settings)))))
-;  (markup text transform-type #:settings settings #:options options))
-;;  ((hash-ref transforms transform-type) text #:settings settings #:options options))
 
 (define (make-link href [text ""]
                    #:title [title ""]

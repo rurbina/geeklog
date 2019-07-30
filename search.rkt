@@ -40,6 +40,7 @@
                               ;(eprintf "	\e[33msearch: \e[0m~v\n" (path->string file-path))
                               (load-doc (path->string (path-replace-extension (last (explode-path file-path)) #""))
                                         #:path file-path
+                                        #:path-prefix path
                                         #:settings settings
                                         #:headers-only #t)))]
                      #:when (and [gldoc? doc]
@@ -61,7 +62,6 @@
             doc))
     ;; sort and trim range
     (set! results (sort results (lambda (a b) (gldoc-sort a b sort-key))))
-    (eprintf "  sort-reverse: ~v\n" sort-reverse)
     (when sort-reverse (set! results (reverse results)))
     (set! results (cond ((< (length results) range-start)
                          '())
@@ -75,6 +75,7 @@
             (for/list ([doc results])
               (load-doc null
                         #:path (hash-ref (gldoc-headers doc) 'path)
+                        #:path-prefix path
                         #:unparsed unparsed
                         #:settings settings))))
     results))
