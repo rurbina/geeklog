@@ -128,6 +128,8 @@
     (hash-set! settings 'recursion-depth (add1 (hash-ref settings 'recursion-depth 1)))
     (hash-set! settings 'effective-mtime effective-mtime)
     (when (string=? docname "") (set! docname (hash-ref settings 'default-doc)))
+    (when (regexp-match #px"/$" docname) (set! docname (string-append docname (hash-ref settings 'default-doc))))
+    (printf "\t\e[31;1mdo-load docname: ~a\e[0m\n" docname)
     (with-handlers ([exn:fail:filesystem? (lambda (x) (set! errmsg (format "document not found ~a" x)))])
       (set! doc (load-parse-doc docname #:settings settings)))
     (if (null? doc)
