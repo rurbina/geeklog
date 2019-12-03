@@ -33,11 +33,9 @@
           (for/list ([doc (for/list ([file (directory-list data-path)]
                                      #:when (file-exists? (build-path data-path file)))
                             (set! file-path (build-path data-path file))
-                            ;;(load-doc (path->string file-path) #:headers-only headers-only))]
                             (with-handlers ([exn:fail? (lambda (e)
                                                          (eprintf "\t\terror is ~v\n" e)
                                                          void)])
-                              ;(eprintf "	\e[33msearch: \e[0m~v\n" (path->string file-path))
                               (load-doc (path->string (path-replace-extension (last (explode-path file-path)) #""))
                                         #:path file-path
                                         #:path-prefix path

@@ -67,6 +67,7 @@
                          ))]
         [else default]))
 
+(define (option->boolean n) (and (string? n) (string->number n) (> (string->number n) 0)))
 
 ;;; transform modes
 
@@ -99,6 +100,12 @@
     (set! options (make-hash `((geeklog-settings . ,settings)))))
   ((hash-ref transforms transform-type) text #:settings settings #:options options))
 
+(define html-escape (text)
+  (string-replace
+   (string-replace
+    (string-replace text "&" "&amp;")
+    "<" "&lt;")
+   ">" "&gt;"))
 
 ;;; ratamarkup customizations
 (ratamarkup-set!-link-callback
@@ -254,11 +261,12 @@
               (search-docs #:tags         (hash-ref blog-options 'tags '(blog))
                            #:no-tags      (hash-ref blog-options 'no-tags '(draft))
                            #:sort         (hash-ref blog-options 'sort 'timestamp)
-                           #:reverse      (if (hash-has-key? blog-options 'reverse) #f #t)
-                           #:no-future    (if (hash-has-key? blog-options 'future) #f #t)
+                           #:reverse      (option->boolean (hash-ref blog-options 'reverse "0"))
+                           #:no-future    (not (option->boolean (hash-ref blog-options 'future "0")))
                            #:newer-than   (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
                            #:headers-only #f
-                           #:range-count  (string->number (hash-ref blog-options 'count "10"))
+                           #:range-count  ((lambda (n) (if (string->number n) (string->number n) 10))
+                                           (hash-ref blog-options 'count "10"))
                            #:unparsed     #t
                            #:settings     settings)))
     (when (and (hash-has-key? blog-options 'cache_key)
@@ -312,20 +320,24 @@
                                                       #:unless (string=? "" (hash-ref hash key "")))
                                              (fixlist (hash-ref hash key ""))))))
     (hash-set*! search-options
-                'reverse ((lambda (n)
-                            (if (and (number? n) (> n 0)) #t #f))
-                          (string->number (hash-ref search-options 'reverse #f)))
-                'items   (string->number (hash-ref search-options 'items "100"))
-                'path    (hash-ref search-options 'path "")
-                'tags    (fixlist (hash-ref search-options 'tags ""))
-                'or-tags (fixlist (hash-ref search-options 'or-tags ""))
-                'no-tags (fixlists search-options '(not-tag not-tags no-tag no-tags
-                                                    not_tag not_tags no_tag no_tags))
-                'and-tags (fixlist (hash-ref search-options 'and-tags ""))
-                'sort    (string->symbol (hash-ref search-options 'sort "name"))
-                'fields  (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'fields "name"))
-                'headers (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'headers "Item"))
-                'widths  (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'widths "auto")))
+                'reverse    ((lambda (n) (or (and (number? n) (> n 0))
+                                             (and (string? n) (string->number n) (> (string->number n) 0))))
+                             (hash-ref search-options 'reverse #f))
+                'no-future  (option->boolean (hash-ref search-options 'no-future "0"))
+                'all-future ((lambda (n) (if (option->boolean n) (current-seconds) 0))
+                             (hash-ref search-options 'future-only "0"))
+                'path       (hash-ref search-options 'path "")
+                'tags       (fixlist (hash-ref search-options 'tags ""))
+                'or-tags    (fixlist (hash-ref search-options 'or-tags ""))
+                'no-tags    (fixlists search-options '(not-tag not-tags no-tag no-tags
+                                                               not_tag not_tags no_tag no_tags))
+                'and-tags   (fixlist (hash-ref search-options 'and-tags ""))
+                'sort       (string->symbol (hash-ref search-options 'sort "name"))
+                'items      ((lambda (n) (if (string->number n) (string->number n) 10))
+                             (hash-ref search-options 'items "10"))
+                'fields     (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'fields "name"))
+                'headers    (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'headers "Item"))
+                'widths     (regexp-split #px"\\s*(?<!\\\\),\\s*" (hash-ref search-options 'widths "auto")))
     (set! docs (search-docs #:tags        (hash-ref search-options 'tags)
                             #:no-tags     (hash-ref search-options 'no-tags)
                             #:or-tags     (hash-ref search-options 'or-tags)
@@ -334,6 +346,8 @@
                             #:path        (hash-ref search-options 'path)
                             #:range-count (hash-ref search-options 'items)
                             #:reverse     (hash-ref search-options 'reverse)
+                            #:no-future   (hash-ref search-options 'no-future)
+                            #:newer-than  (hash-ref search-options 'all-future)
                             #:settings    settings))
     (if (empty? docs)
         (ratamarkup-process "No se encontraron documentos." #:options options)
@@ -695,6 +709,24 @@
                 (hash-ref options 'level)
                 (ratamarkup-process-inline text #:options options)))))
 
+(define (rm-code text
+                   #:options [globals (make-hash '((null . null)))]
+                   #:tokens  [tokens '()])
+  (let ([options (hashify-tokens tokens
+                                 #:defaults '([level "2"]))])
+    (if (string=? (hash-ref options 'caption "") "")
+        (format "<div class=\"code~a\"~a>~a</div>\n\n"
+                (if (hash-has-key? options 'class) (format " ~a" (hash-ref options 'class "")) "")
+                (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
+                (html-escape text))
+        (format "<div~a~a>\n<h~a>~a</h~a>\n<div class=\"code\">~a</div></div>\n\n"
+                (if (hash-has-key? options 'class) (format " class=\"~a\"" (hash-ref options 'class "")) "")
+                (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
+                (hash-ref options 'level)
+                (hash-ref options 'caption)
+                (hash-ref options 'level)
+                (html-escape text)))))
+
 (define (rm-quote text
                   #:options [options (make-hash '((null . null)))]
                   #:tokens  [tokens '()])
@@ -724,6 +756,7 @@
 (ratamarkup-add-section-processor 'div               rm-div)
 (ratamarkup-add-section-processor 'tag               rm-tag)
 (ratamarkup-add-section-processor 'lyrics            rm-lyrics)
+(ratamarkup-add-section-processor 'code              rm-code)
 (ratamarkup-add-section-processor 'entry             rm-entry)
 (ratamarkup-add-section-processor 'include           rm-include)
 (ratamarkup-add-section-processor '4shared-audio     rm-4shared-audio)
