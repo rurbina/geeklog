@@ -100,7 +100,7 @@
     (set! options (make-hash `((geeklog-settings . ,settings)))))
   ((hash-ref transforms transform-type) text #:settings settings #:options options))
 
-(define html-escape (text)
+(define (html-escape text)
   (string-replace
    (string-replace
     (string-replace text "&" "&amp;")
