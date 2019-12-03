@@ -715,11 +715,11 @@
   (let ([options (hashify-tokens tokens
                                  #:defaults '([level "2"]))])
     (if (string=? (hash-ref options 'caption "") "")
-        (format "<div class=\"code~a\"~a>~a</div>\n\n"
+        (format "<pre class=\"code~a\"~a>~a</pre>\n\n"
                 (if (hash-has-key? options 'class) (format " ~a" (hash-ref options 'class "")) "")
                 (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
                 (html-escape text))
-        (format "<div~a~a>\n<h~a>~a</h~a>\n<div class=\"code\">~a</div></div>\n\n"
+        (format "<div~a~a>\n<h~a>~a</h~a>\n<pre class=\"code\">~a</pre></div>\n\n"
                 (if (hash-has-key? options 'class) (format " class=\"~a\"" (hash-ref options 'class "")) "")
                 (if (hash-has-key? options 'style) (format " style=\"~a\"" (hash-ref options 'style)) "")
                 (hash-ref options 'level)
