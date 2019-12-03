@@ -26,6 +26,8 @@ GetOptions(
 	'cat-index|category-index=s'        => \$opt{cat_index},
 	'tags-prefix=s'                     => \$opt{tags_prefix},
 	'cats-prefix=s'                     => \$opt{cats_prefix},
+	'no-header'                         => \$opt{no_header},
+	'no-header-single'                  => \$opt{no_header_single},
 	'suffix=s'                          => \$opt{suffix},
 	'h|help'                            => \$opt{help},
 ) or pod2usage( -exitval => 1 );
@@ -124,7 +126,11 @@ if ( $opt{tags_prefix} ) {
 
 if ( $opt{cats_prefix} ) {
 	foreach my $key ( keys %by_cat ) {
-		my $filename = lc("$opt_d/$opt{cats_prefix}$key$opt{suffix}");
+		my $fnkey = "$key";
+		$fnkey =~ s/ /_/g;
+		$fnkey =~ s/ñ/n/g;
+		my $filename = lc("$opt_d/$opt{cats_prefix}$fnkey$opt{suffix}");
+		print STDERR "$filename\n";
 		&print_file(
 			filename => $filename,
 			template => "title: omg\ntags: system\n\nbody\n",
@@ -143,7 +149,8 @@ sub pretty_single {
 
 	my %arg = @_;
 
-	my @lines = ( "* $arg{title}", '' );
+	my @lines;
+	push( @lines, ( "* $arg{title}", '' ) ) unless $opt{no_header_single};
 
 	foreach my $file ( @{ $arg{items} } ) {
 		push @lines, "- [[$file->{docname}][$file->{title}]]";
@@ -156,11 +163,12 @@ sub pretty_all {
 
 	my (%arg) = @_;
 
-	my @lines = ( "* $arg{title}", '' );
+	my @lines;
+	push( @lines, ( "* $arg{title}", '' ) ) unless $opt{no_header};
 
 	foreach my $item ( sort keys %{ $arg{items} } ) {
-		my $count = scalar @{$arg{items}->{$item}};
-		my $doc = lc( $arg{prefix} . $item );
+		my $count = scalar @{ $arg{items}->{$item} };
+		my $doc   = lc( $arg{prefix} . $item );
 		push @lines, "- [[$doc][$item]] ($count)";
 	}
 
