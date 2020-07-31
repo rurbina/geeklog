@@ -1,7 +1,8 @@
 #lang racket/base
 
 (provide markup
-         markup-doc)
+         markup-doc
+         render-at)
 
 (require racket/list
          racket/string
@@ -11,6 +12,7 @@
          geeklog/structs
          geeklog/load
          geeklog/search
+         (rename-in scribble/reader [read read-at])
          (rename-in ratamarkup/ratamarkup
                     [ratamarkup ratamarkup-process])
          (rename-in ratamarkup/ratamarkup
@@ -86,6 +88,18 @@
                                 [passthrough . ,transform-passthrough]
                                 [passthru    . ,transform-passthrough])))
 
+;; for small templates, snippets and such, parse and exec a string, should be quick and easy
+(define (render-at document #:data (data '()))
+  (let ([ns (make-base-namespace)])
+    (eval '(require racket/base
+                    racket/string) ns)
+    (for ([i data])
+      (namespace-set-variable-value! (car i) (cdr i) #f ns))
+    (string-join
+     (for/list ([i (read-at (open-input-string (string-join (list "@{" document "}") "")))])
+       (format "~a" (eval i ns)))
+     "")))
+
 (define (markup-doc doc #:settings settings #:options [options (make-hash)])
   (let ([body (gldoc-body doc)])
     (if (string? body)
@@ -95,7 +109,7 @@
 
 (define (markup text transform-type
                 #:settings settings
-                #:options options)
+                #:options [options null])
   (when (null? options)
     (set! options (make-hash `((geeklog-settings . ,settings)))))
   ((hash-ref transforms transform-type) text #:settings settings #:options options))
@@ -208,10 +222,12 @@
                  #:options [options (make-hash '((null . null)))]
                  #:tokens  [tokens '()])
   (let ([settings (hash-ref options 'geeklog-settings (make-hash))]
+        [output ""]
         [blog-options (hashify-tokens tokens
                                       #:symbolic-keys '(tags no-tags sort)
                                       #:scalar-keys   '(sort future reverse level no-past))])
-    (for/fold ([output ""])
+    (eprintf "\t\t\trm-blog: folding")
+    (set! output (for/fold ([output ""])
               ([doc (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
                                  #:no-tags    (hash-ref blog-options 'no-tags '(draft))
                                  #:sort       (hash-ref blog-options 'sort 'timestamp)
@@ -242,18 +258,25 @@
                              ((hash-ref (gldoc-headers doc) 'link-format) "Permalink")))
         (when (> (hash-ref (gldoc-headers doc) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
           (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
-        (string-append output top break footer)))))
+        (eprintf ".")
+        (string-append output top break footer))))
+    (eprintf " done")
+    output))
 
 (define rm-wpblog-cache-hash (make-hash))
+
+(define rm-wpblog-post-cache (make-hash))
 
 (define (rm-wpblog text
                    #:options [options (make-hash '((null . null)))]
                    #:tokens  [tokens '()])
   (let ([settings (hash-ref options 'geeklog-settings (make-hash))]
         [items 'null]
+        [output ""]
         [blog-options (hashify-tokens tokens
                                       #:symbolic-keys '(tags no-tags sort)
                                       #:scalar-keys   '(sort future reverse level no-past))])
+    ;; get items
     (set! items
           (if (and (hash-has-key? blog-options 'cache_key)
                    (hash-has-key? rm-wpblog-cache-hash (hash-ref blog-options 'cache_key)))
@@ -265,47 +288,55 @@
                            #:no-future    (not (option->boolean (hash-ref blog-options 'future "0")))
                            #:newer-than   (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
                            #:headers-only #f
-                           #:range-count  ((lambda (n) (if (string->number n) (string->number n) 10))
-                                           (hash-ref blog-options 'count "10"))
+                           #:range-count  ((lambda (n) (if (string->number n) (string->number n) 10)) (hash-ref blog-options 'count "10"))
                            #:unparsed     #t
                            #:settings     settings)))
+    ;; save whole thing cached (not recommended)
     (when (and (hash-has-key? blog-options 'cache_key)
                (not (hash-has-key? rm-wpblog-cache-hash (hash-ref blog-options 'cache_key))))
       (hash-set! rm-wpblog-cache-hash (hash-ref blog-options 'cache_key) items))
-    (for/fold ([output ""])
-              ([doc items])
-      (let ([body (markup (gldoc-body doc)
-                          (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
-                          #:options options
-                          #:settings settings)]
-            [tns (make-base-namespace)]
-            [top ""]
-            [has-break #f]
-            [level (hash-ref blog-options 'level "2")]
-            [break ""]
-            [template-path ""]
-            [out-template ""]
-            [header (lambda (h) (hash-ref (gldoc-headers doc) h))])
-        (set! body (regexp-replace #px"<h1>.*?</h1>" body ""))
-        (if (regexp-match #px"<!--more[^\n]*-->" body)
-            (begin
-              (set! top (regexp-replace #px"(?s:<!--more[^\n]*-->.*$)" body ""))
-              (set! has-break #t))
-            (set! top body))
-        (eval `(require web-server/templates) tns)
-        (set! template-path (build-path (hash-ref settings 'base-path ".") "post.html"))
-        (set! template-path (find-relative-path (current-directory) template-path))
-        (map (lambda (pair) (namespace-set-variable-value! (car pair) (cdr pair) #f tns))
-             (list (cons 'top top)
-                   (cons 'body body)
-                   (cons 'title (header 'title))
-                   (cons 'author (header 'author))
-                   (cons 'has-break has-break)
-                   (cons 'link (header 'link-format))
-                   (cons 'datetime (header 'timestamp-format-date-time))
-                   (cons 'header header)))
-        (set! out-template (eval `(include-template ,(path->string template-path)) tns))
-        (string-append output out-template)))))
+    (eprintf "\t\t\trm-wpblog folding ")
+    (set! output
+          (for/fold ([output ""])
+                    ([doc items])
+            ;; check if this post has been previously cached
+            (if (hash-has-key? rm-wpblog-post-cache (hash-ref (gldoc-headers doc) 'name))
+                ;; it's cached
+                (string-append output (hash-ref rm-wpblog-post-cache (hash-ref (gldoc-headers doc) 'name)))
+                ;; it is not cached, read it and parse it and stuff
+                (let ([body (markup (gldoc-body doc) (hash-ref (gldoc-headers doc) 'transform 'ratamarkup) #:options options #:settings settings)]
+                      [tns (make-base-namespace)]
+                      [top ""]
+                      [has-break #f]
+                      [level (hash-ref blog-options 'level "2")]
+                      [break ""]
+                      [template-path ""]
+                      [out-template ""]
+                      [header (lambda (h) (hash-ref (gldoc-headers doc) h))])
+                  ;; take away any h1 headers, they will be replaced
+                  (set! body (regexp-replace #px"<h1>.*?</h1>" body ""))
+                  (if (regexp-match #px"<!--more[^\n]*-->" body)
+                      (begin (set! top (regexp-replace #px"(?s:<!--more[^\n]*-->.*$)" body ""))
+                             (set! has-break #t))
+                      (set! top body))
+                  (eval `(require web-server/templates) tns)
+                  (set! template-path (build-path (hash-ref settings 'base-path ".") "post.html"))
+                  (set! template-path (find-relative-path (current-directory) template-path))
+                  (map (lambda (pair) (namespace-set-variable-value! (car pair) (cdr pair) #f tns))
+                       (list (cons 'top top)
+                             (cons 'body body)
+                             (cons 'title (header 'title))
+                             (cons 'author (header 'author))
+                             (cons 'has-break has-break)
+                             (cons 'link (header 'link-format))
+                             (cons 'datetime (header 'timestamp-format-date-time))
+                             (cons 'header header)))
+                  (set! out-template (eval `(include-template ,(path->string template-path)) tns))
+                  (eprintf " (~a) " (hash-ref (gldoc-headers doc) 'name))
+                  (hash-set! rm-wpblog-post-cache (hash-ref (gldoc-headers doc) 'name) out-template)
+                  (string-append output out-template)))))
+    (eprintf " done\n")
+    output))
 
 (define (rm-doclist-table text
                           #:options [options (make-hash '((null . null)))]
@@ -348,6 +379,7 @@
                             #:reverse     (hash-ref search-options 'reverse)
                             #:no-future   (hash-ref search-options 'no-future)
                             #:newer-than  (hash-ref search-options 'all-future)
+                            #:headers-only #t
                             #:settings    settings))
     (if (empty? docs)
         (ratamarkup-process "No se encontraron documentos." #:options options)

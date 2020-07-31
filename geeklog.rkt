@@ -4,6 +4,7 @@
 
 (provide geeklog
          geeklog-uri
+         geeklog-servlet-uri
          (rename-out [load-doc          geeklog-load-doc]
                      [merge-settings    geeklog-merge-settings]
                      [default-settings  geeklog-default-settings]
@@ -92,6 +93,24 @@
                   "a las 1:"
                   "a la 1:"))
 
+(define default-templates
+  (make-hash
+   `([category . #<<eot
+@(require geeklog/structs)
+* Category @category
+
+@(if (= (length items) 0)
+  tt-empty
+  items)
+eot
+               ]
+     [category-empty . "No se encontraron documentos en la categoría @category."]
+     [tags . #<<eot
+* Tags
+
+eot
+           ])))
+
 (define default-settings
   (make-hash `([name              . "default settings"]
                [base-path         . "."]
@@ -105,6 +124,7 @@
                [format-date       . ,default-format-date]
                [format-time       . ,default-format-time]
                [format-date-time  . ,default-format-date-time]
+               [templates         . ,default-templates]
                [cache             . ,(make-hash)])))
 
 (define site-settings
@@ -114,12 +134,12 @@
 
 (define (load-parse-doc docname #:settings s)
   (let ([doc (load-doc docname #:settings s)])
-    (eprintf "  loadparsing ~a as ~v\n" docname doc)
+    (eprintf "\t\tloadparsing ~a as ~v\n" docname doc)
     (if (gldoc? doc)
         (markup-doc doc #:settings s)
         null)))
 
-(define (do-load req path headers settings #:path-parts path-parts)
+(define (do-load #:request req #:path path #:settings settings)
   (let ([doc null]
         [errmsg ""]
         [docname null]
@@ -151,8 +171,10 @@
 (define uri-handlers
   (make-hash `([default . ,do-load]
                ["info"  . ,do-info])))
+;; load handlers
+(for ([pair default-handlers]) (hash-set! uri-handlers (car pair) (cdr pair)))
 
-;; url-based (not query-string) servlet
+;; url-based servlet
 (define (geeklog-servlet-uri req)
   (let ([start-time (current-milliseconds)]
         [hostname (cdr (first (filter (lambda (h) (symbol=? (car h) 'host)) (request-headers req))))]
@@ -165,18 +187,28 @@
         [settings default-settings]
         [response-code 200]
         [mime-type TEXT/HTML-MIME-TYPE]
-        [response-bytes #"OK"])
-    (printf "REQUEST: ~a ~a " hostname path)
+        [response-bytes #"OK"]
+        [path-parts (for/list ([part (url-path (request-uri req))])
+                      (path/param-path part))])
+    (printf "REQUEST: ~a ~a\n" hostname path)
+    (eprintf "\tbindings: ~a\n" req)
     (set! settings (hash-ref site-settings hostname default-settings))
-    (printf "SITE: ~a " (hash-ref settings 'name))
-    (printf "\e[1mPATH PARTS: ~a\e[0m " (url-path (request-uri req)))
+    (printf "\tSITE: ~a \n" (hash-ref settings 'name))
+    (printf "\t\e[1mPATH PARTS: ~a\e[0m\n" path-parts)
     (when (string=? item "") (set! item (hash-ref settings 'default-doc)))
-    (printf "ITEM: ~a " item)
+    (printf "\tITEM: ~a\n" item)
     (when (hash-has-key? uri-handlers item)
       (set! handler (hash-ref uri-handlers item)))
-    (printf "HANDLER: ~a " handler)
-    (set! output (handler req path (request-headers req) settings #:path-parts (url-path (request-uri req))))
-    (printf "TIME: ~a ms "  (- (current-milliseconds) start-time))
+    (eprintf "\t\e[35mpath ~a handler ~a\e[0m\n" path-parts handler)
+    (eprintf "\t\e[35mexpected ~v from ~v\e[0m\n"
+             (string-join (list (first path-parts) "/") "")
+             uri-handlers)
+    (when (> (length path-parts) 1)
+      (let ([dir (string-join (list (first path-parts) "/") "")])
+        (set! handler (hash-ref uri-handlers dir handler))))
+    (printf "\tHANDLER: ~a \n" handler)
+    (set! output (handler #:request req #:path path #:settings settings))
+    (printf "\tTIME: ~a ms \n"  (- (current-milliseconds) start-time))
     (cond
       [(and (pair? output) (number? (car output)))
        (set! response-code (car output))
@@ -189,7 +221,7 @@
        (set! mime-type      (hash-ref output 'mime-type mime-type))
        (set! headers        (hash-ref output 'headers headers))
        (set! output (hash-ref output 'output ""))])
-    (printf "CODE: ~v\n" response-code)
+    (printf "\tCODE: ~v\n\n" response-code)
     (response/full response-code
                    response-bytes
                    (current-seconds)
@@ -215,7 +247,7 @@
                      (cons 'include  (lambda (name (cacheable #f))
                                        (let ([load (lambda (name) (gldoc-body (load-parse-doc name #:settings settings)))])
                                          (when (and cacheable (not (hash-has-key? include-cache name)))
-                                           (eprintf "INCLUDE CACHE ~a " name)
+                                           (eprintf "\tINCLUDE CACHE ~a\n" name)
                                            (hash-set! include-cache name (load name)))
                                          (if cacheable
                                              (hash-ref include-cache name)
@@ -229,8 +261,6 @@
 
 ;; launch the uri-based servlet
 (define (geeklog-uri #:port [port 8099] #:path [path "."])
-  ;; load handlers
-  (for ([pair default-handlers]) (hash-set! uri-handlers (car pair) (cdr pair)))
   (serve/servlet geeklog-servlet-uri
                  #:launch-browser? #f
                  #:listen-ip #f
@@ -241,7 +271,7 @@
                  #:servlet-regexp #rx""))
 
 
-;; servlet processing thread
+;; servlet processing thread (deprecated, use geeklog-uri
 (define (geeklog-servlet req)
   (let ([params (make-hash (url-query (request-uri req)))]
         [out-template null]

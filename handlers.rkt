@@ -5,7 +5,12 @@
 (provide default-handlers)
 
 (require (only-in geeklog/search search-docs)
+         (only-in geeklog/markup
+                  markup
+                  render-at)
+         (rename-in scribble/reader [read read-at])
          geeklog/structs
+         geeklog/load
          web-server/http/request-structs
          net/url-structs
          sha)
@@ -24,9 +29,27 @@
          (string-join (for/list ([row rows]) (render-row row)))
          "</table>\n")))
 
+(define (handler-rendertest #:request r #:path p #:settings s)
+  (let ([headers (make-hash '([name "rendertest"]
+                              [title "Render test"]))]
+        [body ""]
+        [template #<<eot
+* Render test
+
+This is a test for the minirenderer.
+
+eot
+                  ])
+    (set! body (render-at template))
+    (eprintf "\t\t\t\e[36mrendertst: ~v\e[0m\n" body)
+    ;(set! body template)
+    (set! body (markup body 'ratamarkup #:settings s))
+    (cons "templatify" (cons headers body))))
 
 ;; print out cached doc table
-(define (handler-cache req path headers settings)
+(define (handler-cache #:request req
+                       #:path path
+                       #:settings settings)
   (format
    "<html><head><title>Cached</title></head><body><h1>Server info</h1><h2>Cache dump</h2>~a</body></html>\n"
    (render-table
@@ -40,21 +63,63 @@
                       null)))))))
 
 ;; print out categories
-(define (handler-categories req path headers settings)
+(define (handler-categories #:request req
+                            #:path path
+                            #:settings settings)
   (let ([cats (make-hash)]
         [headers (make-hash '((title "Categories")))]
-        [body ""])
-    (for ([item (hash-ref settings 'cache)])
-      (for ([cat (hash-ref 'categories (vector-ref (struct->vector item) 0))])
+        [body ""]
+        [doc-cats (lambda (doc) (hash-ref (gldoc-headers doc) 'categories))]
+        [docs (search-docs #:settings settings #:headers-only #t)])
+    (for ([item docs])
+      (for ([cat (doc-cats item)])
         (hash-set! cats cat (+ 1 (hash-ref cats cat 0)))))
+    ;; gotta cache 'em all
+    ;; TBD
     (set! body
           (string-join
-           (for/list ([sorted (sort (hash-keys cats) string<?)])
-             (format "- [[category/~a][~a]] (~a)\n" sorted sorted (hash-ref cats sorted)))))
+           (for/list ([cat (sort (hash-keys cats) string<?)])
+             (format "- [[category/~a][~a]] (~a)" cat cat (hash-ref cats cat)))
+           "\n"))
+    (eprintf "\t\t\thandler-categories:\n\e[1m~a\e[0m\n" body)
+    (set! body (markup body 'ratamarkup #:settings settings))
     (cons "templatify" (cons headers body))))
 
+;; print out single category
+(define (handler-category #:request req #:path path #:settings settings)
+  (let ([category (second (string-split (first (string-split path "?")) "/"))])
+    (let ([docs (search-docs #:or-tags (list (string->symbol category)) #:settings settings)]
+          [doc-name (lambda (doc) (hash-ref (gldoc-headers doc) 'name))]
+          [doc-title (lambda (doc) (hash-ref (gldoc-headers doc) 'title (hash-ref (gldoc-headers doc) 'name)))]
+          [tt (hash-ref (hash-ref settings 'templates) 'category)]
+          [tt-empty (hash-ref (hash-ref settings 'templates) 'category-empty)])
+      (let ([headers (make-hash '((title "Categoría ~a" category)))]
+            [body (render-at tt #:data `((items . ,docs)
+                                         (category . ,category)
+                                         (tt-empty . ,tt-empty)))])
+        (set! body (markup body 'ratamarkup #:settings settings))
+        (cons "templatify" (cons headers body))))))
+
+(define (handler-tags #:request r #:path p #:settings s)
+  (let ([headers (make-hash `([name . "tags"]
+                              [title . "Tags"]))]
+        [body "Not implemented :)"])
+    (cons "templatify" (cons headers body))))
+
+;; print out cache dump
+(define (handler-cache-dump #:request r #:path p #:settings s)
+  (let ([headers (make-hash `([name . "cachedump"]
+                              [title . "Cache Dump"]))]
+        [body ""]
+        [cache (cache-dump)])
+    (set! body (string-join (for/list ([i cache])
+                              (format "- ~a:~a\n" (hash-ref i 'source) (hash-ref i 'path))) ""))
+    (set! body (string-join (list "* Cache Dump\n\n" body "\n\n") ""))
+    (cons "templatify" (cons headers body))))
+  
+
 ;; print out a feed
-(define (handler-feed req path headers settings)
+(define (handler-feed #:request req #:path path #:settings settings)
   (let ([result (make-hash)]
         [hostname (hash-ref settings 'hostname "localhost")]
         [scheme   (hash-ref settings 'scheme   "http")]
@@ -106,6 +171,10 @@
                "\n"))
     result))
 
-(define default-handlers `(["cached" . ,handler-cache]
-                           ["categories" . ,handler-categories]
-                           ["feed" . ,handler-feed]))
+(define default-handlers `(["category/" . ,handler-category]
+                           ["cached" . ,handler-cache]
+                           ["categories!" . ,handler-categories]
+                           ["tags!" . ,handler-tags]
+                           ["feed" . ,handler-feed]
+                           ["rendertest" . ,handler-rendertest]
+                           ["cachedump" . ,handler-cache-dump]))
