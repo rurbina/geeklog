@@ -66,7 +66,6 @@
           (hash-set! headers key (hash-ref all-headers key))))
     ;; purgue previous row, if it exists
     (metadb-delete path)
-    (eprintf "\e[35m<metadb-push:~a>\e[0m " path)
     (query-exec metadb "insert into metadata (path, mtime, headers, summary, body, source) values ($1,$2,$3,$4,$5,$6)"
                 (if (path? path) (path->string path) path)
                 mtime
@@ -149,7 +148,7 @@
         [summary    null]
         [is-cached #f]
         [stime (current-milliseconds)]
-        [eprintf (lambda x x)]
+        [eprintf (lambda x x)] ; mute those eprintfs
         [reqnames (list (if (path? path) (path->string (last (explode-path path))) name))]
         [path     (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path))])
     (set! reqnames (list (first reqnames) (unaccent-string (first reqnames))))
@@ -354,12 +353,8 @@
           extra
           (if (string=? text "") href text)))
 
-(define (gheader doc key . default)
-  (hash-ref (gldoc-headers doc) key default))
-
 ;; gldoc sorting function
 (define (gldoc-sort a b key)
-  (eprintf "\t\t\e[35mgldoc-sort<~a>: ~a(~a) <=> ~a(~a)\n" key (gheader a 'name) (gheader a key) (gheader b 'name) (gheader b key))
   (let ([dk (lambda (doc key) (hash-ref (gldoc-headers doc) key
                                        (hash-ref (gldoc-headers doc) 'name)))])
     (let ([ka (dk a key)]
