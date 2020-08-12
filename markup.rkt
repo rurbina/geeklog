@@ -284,7 +284,7 @@
               (search-docs #:tags         (hash-ref blog-options 'tags '(blog))
                            #:no-tags      (hash-ref blog-options 'no-tags '(draft))
                            #:sort         (hash-ref blog-options 'sort 'timestamp)
-                           #:reverse      (option->boolean (hash-ref blog-options 'reverse "0"))
+                           #:reverse      (not (option->boolean (hash-ref blog-options 'reverse "0")))
                            #:no-future    (not (option->boolean (hash-ref blog-options 'future "0")))
                            #:newer-than   (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
                            #:headers-only #f
