@@ -134,7 +134,6 @@ eot
 
 (define (load-parse-doc docname #:settings s)
   (let ([doc (load-doc docname #:settings s)])
-    (eprintf "\t\tloadparsing ~a as ~v\n" docname doc)
     (if (gldoc? doc)
         (markup-doc doc #:settings s)
         null)))
@@ -149,7 +148,6 @@ eot
     (hash-set! settings 'effective-mtime effective-mtime)
     (when (string=? docname "") (set! docname (hash-ref settings 'default-doc)))
     (when (regexp-match #px"/$" docname) (set! docname (string-append docname (hash-ref settings 'default-doc))))
-    (printf "\t\e[31;1mdo-load docname: ~a\e[0m\n" docname)
     (with-handlers ([exn:fail:filesystem? (lambda (x) (set! errmsg (format "document not found ~a" x)))])
       (set! doc (load-parse-doc docname #:settings settings)))
     (if (null? doc)
@@ -180,6 +178,7 @@ eot
         [hostname (cdr (first (filter (lambda (h) (symbol=? (car h) 'host)) (request-headers req))))]
         [path (url->string (request-uri req))]
         [item (path/param-path (last (url-path (request-uri req))))]
+        [stem null]
         [headers (list (make-header (string->bytes/utf-8 "omg") (string->bytes/utf-8 "wtf")))]
         [doc "index"]
         [output ""]
@@ -190,22 +189,17 @@ eot
         [response-bytes #"OK"]
         [path-parts (for/list ([part (url-path (request-uri req))])
                       (path/param-path part))])
-    (printf "REQUEST: ~a ~a\n" hostname path)
-    (eprintf "\tbindings: ~a\n" req)
+    (printf "REQUEST: ~a ~a ~a\n" hostname path (date->string (current-date) 'iso-8601))
     (set! settings (hash-ref site-settings hostname default-settings))
     (printf "\tSITE: ~a \n" (hash-ref settings 'name))
     (printf "\t\e[1mPATH PARTS: ~a\e[0m\n" path-parts)
     (when (string=? item "") (set! item (hash-ref settings 'default-doc)))
     (printf "\tITEM: ~a\n" item)
-    (when (hash-has-key? uri-handlers item)
-      (set! handler (hash-ref uri-handlers item)))
-    (eprintf "\t\e[35mpath ~a handler ~a\e[0m\n" path-parts handler)
-    (eprintf "\t\e[35mexpected ~v from ~v\e[0m\n"
-             (string-join (list (first path-parts) "/") "")
-             uri-handlers)
-    (when (> (length path-parts) 1)
-      (let ([dir (string-join (list (first path-parts) "/") "")])
-        (set! handler (hash-ref uri-handlers dir handler))))
+    (set! stem (if (= 1 (length path-parts)) (first path-parts) (string-join (list (first path-parts) "/") "")))
+    (printf "\tSTEM: ~a\n" stem)
+    (printf "\t\e[35mchecking handler for ~v in ~v\e[0m\n" stem (hash-keys uri-handlers))
+    (when (hash-has-key? uri-handlers stem) (set! handler (hash-ref uri-handlers stem)))
+    (printf "\t\e[35mpath ~a handler ~a\e[0m\n" path-parts handler)
     (printf "\tHANDLER: ~a \n" handler)
     (set! output (handler #:request req #:path path #:settings settings))
     (printf "\tTIME: ~a ms \n"  (- (current-milliseconds) start-time))
