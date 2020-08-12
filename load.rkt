@@ -17,19 +17,22 @@
 (define geeklog/load #t)
 
 ;; metadata cache database
-(define metadb (sqlite3-connect #:database 'temporary #:mode 'create))
-(query-exec metadb
-            #<<eoq
-	create table metadata (
+(define metadb (sqlite3-connect #:database "meta.db" #:mode 'create))
+
+;; regenerate database if needed
+;; TBD: proper handlers for mismatched databases and such
+(with-handlers
+  ([exn:fail? (lambda (e) (eprintf "reusing existing metadb\n"))])
+  (query-exec
+   metadb
+   "	create table metadata (
 		path string,
 		mtime string,
 		headers text,
 		summary text,
 		body text,
-		source text not null default "file"
-	);
-eoq
-            )
+		source text not null default \"file\"
+	);"))
 
 ;; dump cache database
 (define (metadb-dump)
@@ -43,6 +46,11 @@ eoq
                 (cons 'body    (vector-ref row 4))
                 (cons 'source  (vector-ref row 5))))))
 
+;; delete document from cache
+(define (metadb-delete path)
+  (when (path? path) (set! path (path->string path)))
+  (query-exec metadb "delete from metadata where path = $1" path))
+
 ;; insert a document in the cache
 (define (metadb-push #:path path
                      #:mtime mtime
@@ -53,18 +61,61 @@ eoq
   (let ([headers (make-hash)])
     ;; some headers cannot be fast-serialized, remove them
     (for ([key (hash-keys all-headers)])
-      (if (member key (list 'link-format 'title-link))
+      (if (member key (list 'link-format))
           (hash-set! headers key null)
           (hash-set! headers key (hash-ref all-headers key))))
     ;; purgue previous row, if it exists
-    (query-exec metadb "delete from metadata where path = $1" path)
+    (metadb-delete path)
+    (eprintf "\e[35m<metadb-push:~a>\e[0m " path)
     (query-exec metadb "insert into metadata (path, mtime, headers, summary, body, source) values ($1,$2,$3,$4,$5,$6)"
                 (if (path? path) (path->string path) path)
                 mtime
                 (s-exp->fasl headers)
                 sql-null
-                (if (null? body) sql-null (s-exp->fasl body))
+                (if (null? body) sql-null body)
                 source)))
+
+;; read a document from cache
+(define (metadb-get path)
+  (let ([doc null]
+        [row
+         (query-maybe-row
+          metadb
+          "	select mtime, path, headers, body, summary, source
+		from metadata
+		where path = $1"
+          (if (path? path) (path->string path) path))])
+    (when (vector? row)
+      (set! doc (make-hash (map cons
+                                '(mtime path headers body summary source)
+                                (vector->list row))))
+      (hash-set! doc 'headers (fasl->s-exp (hash-ref doc 'headers)))
+      ;; inject back non-fast-serializable headers
+      (let ([headers (hash-ref doc 'headers)])
+        (hash-set* headers
+                   'link-format (lambda (text) (make-link (hash-ref headers 'name) text
+                                                          #:title (hash-ref headers 'title "")))))
+      (when (eq? sql-null (hash-ref doc 'body)) (hash-set! doc 'body ""))
+      (when (eq? sql-null (hash-ref doc 'summary)) (hash-set! doc 'summary "")))
+    doc))
+
+;; check if document is in cache - returns #f or mtime in cache
+(define (metadb-check #:path filename
+                      #:headers-only [headers-only #f]
+                      #:summary-only [summary-only #f])
+  (query-maybe-value
+   metadb
+   "select mtime from metadata where path = $1
+	and case $2
+		when 'headers' then headers is not null
+		when 'body' then body is not null
+		when 'summary' then 0
+		else 1 end"
+   (path->string filename)
+   (cond [(not (or headers-only summary-only)) "body"]
+         [summary-only "summary"]
+         [headers-only "headers"]
+         [else "any"])))
 
 ;; remove accents and stuff
 (define (unaccent-string text)
@@ -98,6 +149,7 @@ eoq
         [summary    null]
         [is-cached #f]
         [stime (current-milliseconds)]
+        [eprintf (lambda x x)]
         [reqnames (list (if (path? path) (path->string (last (explode-path path))) name))]
         [path     (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path))])
     (set! reqnames (list (first reqnames) (unaccent-string (first reqnames))))
@@ -120,36 +172,21 @@ eoq
     ;; read and parse
     (eprintf "\t\t\tload-doc: parsing file ~a [cache: ~a, headers: ~a, summary: ~a, unparsed: ~a]... " filename (not no-cache) headers-only summary-only unparsed)
     ;; check if cached -- cache is tiered with headers, summary and parsed body
-    (set! is-cached (query-maybe-row metadb "select mtime from metadata where path = $2 and $1 is not null limit 1"
-                                     (cond [(not (or headers-only summary-only)) "body"]
-                                           [summary-only "summary"]
-                                           [headers-only "headers"]
-                                           [else path])
-                                     (path->string filename)))
-    (when is-cached
-      ;; check if cache is stale and kill it if it is
-      (when (< is-cached (file-or-directory-modify-seconds filename))
-        (eprintf " <stale cache deleted ~a < ~a> ")
-        (query-exec "delete from metadata where path = $1" (path->string filename))
-        (set! is-cached #f)))
+    (set! is-cached (metadb-check #:path filename #:headers-only headers-only #:summary-only summary-only))
+    ;; check if cache is stale and kill it if it is
+    (when (and is-cached (< is-cached (file-or-directory-modify-seconds filename)))
+      (eprintf " <stale cache deleted ~a < ~a> ")
+      (metadb-delete filename)
+      (set! is-cached #f))
+    (eprintf "\e[36m(cache is ~a file is ~a)\e[0m " is-cached (file-or-directory-modify-seconds filename))
     (eprintf "~a" (if is-cached " \e[33mcached\e[0m " " \e[31mnot cached\e[0m "))
-    (if (and is-cached #t)
+    (if is-cached
         ;; read from cache
         (let ([dbread '()])
           (eprintf "\t\t\tload-doc: loading from cache...")
-          (set! dbread (query-row metadb
-                                  "select headers, body from metadata where path = $1 limit 1"
-                                  (path->string filename)))
-          (let ([headers (fasl->s-exp (vector-ref dbread 0))]
-                [body (fasl->s-exp (vector-ref dbread 1))])
-            ;; inject back non-fast-serializable headers
-            (set! headers
-                  (hash-set* headers
-                             'link-format (lambda (text) (make-link (hash-ref headers 'name) text
-                                                                    #:title (hash-ref headers 'title "")))
-                             'title-link (make-link (hash-ref headers 'name)
-                                                    (hash-ref headers 'title "")
-                                                    #:title (hash-ref headers 'title ""))))
+          (set! dbread (metadb-get filename))
+          (let ([headers (hash-ref dbread 'headers)]
+                [body (hash-ref dbread 'body)])
             (set! loaded (gldoc headers body)))
           (eprintf "done"))
         ;; read from disk
@@ -317,8 +354,12 @@ eoq
           extra
           (if (string=? text "") href text)))
 
+(define (gheader doc key . default)
+  (hash-ref (gldoc-headers doc) key default))
+
 ;; gldoc sorting function
 (define (gldoc-sort a b key)
+  (eprintf "\t\t\e[35mgldoc-sort<~a>: ~a(~a) <=> ~a(~a)\n" key (gheader a 'name) (gheader a key) (gheader b 'name) (gheader b key))
   (let ([dk (lambda (doc key) (hash-ref (gldoc-headers doc) key
                                        (hash-ref (gldoc-headers doc) 'name)))])
     (let ([ka (dk a key)]
@@ -330,4 +371,3 @@ eoq
          gldoc-sort
          (rename-out [metadb-push cache-push]
                      [metadb-dump cache-dump]))
-
