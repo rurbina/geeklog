@@ -223,44 +223,48 @@
                  #:tokens  [tokens '()])
   (let ([settings (hash-ref options 'geeklog-settings (make-hash))]
         [output ""]
+        [header (lambda (doc key) (hash-ref (gldoc-headers doc) key))]
         [blog-options (hashify-tokens tokens
                                       #:symbolic-keys '(tags no-tags sort)
                                       #:scalar-keys   '(sort future reverse level no-past))])
-    (eprintf "\t\t\trm-blog: folding")
-    (set! output (for/fold ([output ""])
-              ([doc (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
-                                 #:no-tags    (hash-ref blog-options 'no-tags '(draft))
-                                 #:sort       (hash-ref blog-options 'sort 'timestamp)
-                                 #:reverse    (if (hash-has-key? blog-options 'reverse) #f #t)
-                                 #:no-future  (if (hash-has-key? blog-options 'future) #f #t)
-                                 #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
-                                 #:settings   settings)])
-      (let ([body (markup (gldoc-body doc)
-                          (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
-                          #:options options
-                          #:settings settings)]
-            [top ""]
-            [has-break #f]
-            [footer ""]
-            [level (hash-ref blog-options 'level "2")]
-            [break ""])
-        (if (regexp-match #px"<!-- break -->" body)
-            (begin
-              (set! top (regexp-replace #px"(?s:<!-- break -->.*$)" body ""))
-              (set! has-break #t))
-            (set! top body))
-        (set! top (regexp-replace* #px"<(/?)h1>" top (format "<\\1h~a>" level)))
-        (when has-break (set! break (format "<p class=\"blog_break\">~a</p>\n\n"
-                                            ((hash-ref (gldoc-headers doc) 'link-format) "Leer el resto"))))
-        (set! footer (format "<p class=\"blog_footer\"><i>~a por ~a</i> [~a]</p>\n"
-                             (hash-ref (gldoc-headers doc) 'timestamp-format-date-time)
-                             (hash-ref (gldoc-headers doc) 'author)
-                             ((hash-ref (gldoc-headers doc) 'link-format) "Permalink")))
-        (when (> (hash-ref (gldoc-headers doc) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
-          (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
-        (eprintf ".")
-        (string-append output top break footer))))
-    (eprintf " done")
+    (eprintf "\t\t\e[38;5;141mrm-blog: folding")
+    (set! output
+          (for/fold ([output ""])
+                    ([meta (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
+                                        #:no-tags    (hash-ref blog-options 'no-tags '(draft))
+                                        #:sort       (hash-ref blog-options 'sort 'timestamp)
+                                        #:reverse    (if (hash-has-key? blog-options 'reverse) #f #t)
+                                        #:no-future  (if (hash-has-key? blog-options 'future) #f #t)
+                                        #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
+                                        #:headers-only #t
+                                        #:settings   settings)])
+            (let ([doc (load-doc (hash-ref (gldoc-headers meta) 'name) #:settings settings)])
+              (let ([body (markup (gldoc-body doc)
+                                  (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
+                                  #:options options
+                                  #:settings settings)]
+                    [top ""]
+                    [has-break #f]
+                    [footer ""]
+                    [level (hash-ref blog-options 'level "2")]
+                    [break ""])
+                (if (regexp-match #px"<!-- break -->" body)
+                    (begin
+                      (set! top (regexp-replace #px"(?s:<!-- break -->.*$)" body ""))
+                      (set! has-break #t))
+                    (set! top body))
+                (set! top (regexp-replace* #px"<(/?)h1>" top (format "<\\1h~a>" level)))
+                (when has-break (set! break (format "<p class=\"blog_break\">~a</p>\n\n"
+                                                    (make-link (header doc 'name) "Leer el resto"))))
+                (set! footer (format "<p class=\"blog_footer\"><i>~a por ~a</i> [~a]</p>\n"
+                                     (hash-ref (gldoc-headers doc) 'timestamp-format-date-time)
+                                     (hash-ref (gldoc-headers doc) 'author)
+                                     (make-link (header doc 'name) "Permalink")))
+                (when (> (hash-ref (gldoc-headers doc) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
+                  (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
+                (eprintf "(~a)" (hash-ref (gldoc-headers doc) 'name))
+                (string-append output top break footer)))))
+    (eprintf " done\e[0m\n")
     output))
 
 (define rm-wpblog-cache-hash (make-hash))
