@@ -91,9 +91,11 @@
       (hash-set! doc 'headers (fasl->s-exp (hash-ref doc 'headers)))
       ;; inject back non-fast-serializable headers
       (let ([headers (hash-ref doc 'headers)])
-        (hash-set* headers
-                   'link-format (lambda (text) (make-link (hash-ref headers 'name) text
-                                                          #:title (hash-ref headers 'title "")))))
+        (set! headers
+              (hash-set*! headers
+                          'link-format (lambda (text)
+                                         (make-link (hash-ref headers 'name) text
+                                                    #:title (hash-ref headers 'title ""))))))
       (when (eq? sql-null (hash-ref doc 'body)) (hash-set! doc 'body ""))
       (when (eq? sql-null (hash-ref doc 'summary)) (hash-set! doc 'summary "")))
     doc))
@@ -364,5 +366,6 @@
 
 (provide load-doc
          gldoc-sort
+         make-link
          (rename-out [metadb-push cache-push]
                      [metadb-dump cache-dump]))
