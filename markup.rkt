@@ -12,6 +12,7 @@
          geeklog/structs
          geeklog/load
          geeklog/search
+         geeklog/log
          (rename-in scribble/reader [read read-at])
          (rename-in ratamarkup/ratamarkup
                     [ratamarkup ratamarkup-process])
@@ -221,13 +222,14 @@
 (define (rm-blog text
                  #:options [options (make-hash '((null . null)))]
                  #:tokens  [tokens '()])
+  (define (log x #:indent (i 2)) (logp x #:level 1 #:indent i #:tag 'markup #:color 123 #:nl #t))
   (let ([settings (hash-ref options 'geeklog-settings (make-hash))]
         [output ""]
         [header (lambda (doc key) (hash-ref (gldoc-headers doc) key))]
         [blog-options (hashify-tokens tokens
                                       #:symbolic-keys '(tags no-tags sort)
                                       #:scalar-keys   '(sort future reverse level no-past))])
-    (eprintf "\t\t\e[38;5;141mrm-blog: folding")
+    (log "rm-blog: folding ")
     (set! output
           (for/fold ([output ""])
                     ([meta (search-docs #:tags       (hash-ref blog-options 'tags '(blog))
@@ -238,7 +240,10 @@
                                         #:newer-than (if (hash-has-key? blog-options 'no-past) (current-seconds) 0)
                                         #:headers-only #t
                                         #:settings   settings)])
-            (let ([doc (load-doc (hash-ref (gldoc-headers meta) 'name) #:settings settings)])
+            (log `(headers . ,(gldoc-headers meta)))
+            (let ([doc (load-doc (hash-ref (gldoc-headers meta) 'name)
+                                 #:path (hash-ref (gldoc-headers meta) 'path)
+                                 #:settings settings)])
               (let ([body (markup (gldoc-body doc)
                                   (hash-ref (gldoc-headers doc) 'transform 'ratamarkup)
                                   #:options options
@@ -262,9 +267,9 @@
                                      (make-link (header doc 'name) "Permalink")))
                 (when (> (hash-ref (gldoc-headers doc) 'mtime) (unbox (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime)))
                   (set-box! (hash-ref (hash-ref options 'geeklog-settings) 'effective-mtime) (hash-ref (gldoc-headers doc) 'mtime)))
-                (eprintf "(~a)" (hash-ref (gldoc-headers doc) 'name))
+                (log (list (hash-ref (gldoc-headers doc) 'name)))
                 (string-append output top break footer)))))
-    (eprintf " done\e[0m\n")
+    (log "done\n")
     output))
 
 (define rm-wpblog-cache-hash (make-hash))
