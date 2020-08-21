@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require geeklog/structs
+         geeklog/log
          racket/date
          racket/list
          racket/string
@@ -22,7 +23,7 @@
 ;; regenerate database if needed
 ;; TBD: proper handlers for mismatched databases and such
 (with-handlers
-  ([exn:fail? (lambda (e) (eprintf "reusing existing metadb\n"))])
+  ([exn:fail? (lambda (e) (logp "reusing existing metadb\n" #:tag 'info))])
   (query-exec
    metadb
    "	create table metadata (
@@ -92,7 +93,7 @@
       ;; inject back non-fast-serializable headers
       (let ([headers (hash-ref doc 'headers)])
         (set! headers
-              (hash-set*! headers
+              (hash-set* headers
                           'link-format (lambda (text)
                                          (make-link (hash-ref headers 'name) text
                                                     #:title (hash-ref headers 'title ""))))))
@@ -141,6 +142,8 @@
                   #:summary-chars   [summary-chars 200] ; or how many chars to load as summary if regexp fails
                   #:no-cache        [no-cache #f] ; disable caching
                   #:settings        settings)
+  (define (log x #:indent [i 0] #:level [l 1]) (logp x #:tag 'load #:level l #:indent i))
+  (log "load-doc: " #:indent 2)
   (let ([filename (if (path? path) path #f)]
         [loaded   null]
         [whole-file null]
@@ -150,7 +153,6 @@
         [summary    null]
         [is-cached #f]
         [stime (current-milliseconds)]
-        [eprintf (lambda x x)] ; mute those eprintfs
         [reqnames (list (if (path? path) (path->string (last (explode-path path))) name))]
         [path     (build-path (hash-ref settings 'base-path) (hash-ref settings 'data-path))])
     (set! reqnames (list (first reqnames) (unaccent-string (first reqnames))))
@@ -162,7 +164,7 @@
         (set! filename (build-path path (string-append fname suffix)))))
     ;; not found? croak!
     (when (or (null? filename) (not (file-exists? filename)))
-      (eprintf "\t\t\e[1mnew-loader:\e[0m not loaded ~a (~a) in ~a ms\n" path filename (- (current-milliseconds) stime))
+      (log (format "new-loader: not loaded ~a (~a) in ~a ms\n" path filename (- (current-milliseconds) stime)) #:level 2)
       (raise (make-exn:fail:filesystem
               (format "document ~a not found as ~a in base ~a data ~a, suffixes ~a"
                       name filename
@@ -170,26 +172,21 @@
                       (hash-ref settings 'data-path)
                       (hash-ref settings 'suffixes))
               (current-continuation-marks))))
+    (log `(filename . ,filename))
     ;; read and parse
-    (eprintf "\t\t\tload-doc: parsing file ~a [cache: ~a, headers: ~a, summary: ~a, unparsed: ~a]... " filename (not no-cache) headers-only summary-only unparsed)
     ;; check if cached -- cache is tiered with headers, summary and parsed body
     (set! is-cached (metadb-check #:path filename #:headers-only headers-only #:summary-only summary-only))
     ;; check if cache is stale and kill it if it is
     (when (and is-cached (< is-cached (file-or-directory-modify-seconds filename)))
-      (eprintf " <stale cache deleted ~a < ~a> ")
       (metadb-delete filename)
       (set! is-cached #f))
-    (eprintf "\e[36m(cache is ~a file is ~a)\e[0m " is-cached (file-or-directory-modify-seconds filename))
-    (eprintf "~a" (if is-cached " \e[33mcached\e[0m " " \e[31mnot cached\e[0m "))
     (if is-cached
         ;; read from cache
         (let ([dbread '()])
-          (eprintf "\t\t\tload-doc: loading from cache...")
           (set! dbread (metadb-get filename))
           (let ([headers (hash-ref dbread 'headers)]
                 [body (hash-ref dbread 'body)])
             (set! loaded (gldoc headers body)))
-          (eprintf "done"))
         ;; read from disk
         (begin
           (if headers-only
@@ -222,16 +219,14 @@
                 (begin (set! summary (regexp-replace #px"(?s:<!--more[^\n]*-->.*$)" body ""))
                        (hash-set! headers 'has-break #t))
                 (set! summary body)))
-          (eprintf "done\n")
           (when (hash-ref headers 'no-cache #f) (set! no-cache #t))
           ;; cache
           (unless no-cache
-            (eprintf "\t\t\tcaching...")
             (metadb-push #:path (path->string filename)
                          #:mtime (file-or-directory-modify-seconds filename)
                          #:headers headers
                          #:body (if (or headers-only summary-only unparsed) null body))
-            (eprintf "done\n"))))
+    (log "done\n")
     loaded))
 
 ;; parse a geeklog document headers
@@ -267,7 +262,6 @@
     ;; these should always exist
     (for ([key '(title author tags categories keywords description comment)])
       (unless (hash-has-key? headers key) (hash-set! headers key "")))
-    ;; (eprintf "\theaders so far: ~v\n" headers)
     ;; some transforms
     (hash-set*! headers
                 ;; categories should be tokenized, not just split on whitespace

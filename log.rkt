@@ -23,7 +23,10 @@
 (define (check-level x)
   (<= x level))
 
-(define tags (make-hash '((:all . #t))))
+(define tags (make-hash '((:all . #t)
+                          (info . #t)
+                          (warning . #t)
+                          (error . #t))))
 
 (define (log-add-tag tag)
   (hash-set! tags tag #t))
