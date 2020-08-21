@@ -169,6 +169,7 @@ eot
 (define uri-handlers
   (make-hash `([default . ,do-load]
                ["info"  . ,do-info])))
+
 ;; load handlers
 (for ([pair default-handlers]) (hash-set! uri-handlers (car pair) (cdr pair)))
 

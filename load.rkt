@@ -186,7 +186,7 @@
           (set! dbread (metadb-get filename))
           (let ([headers (hash-ref dbread 'headers)]
                 [body (hash-ref dbread 'body)])
-            (set! loaded (gldoc headers body)))
+            (set! loaded (gldoc headers body))))
         ;; read from disk
         (begin
           (if headers-only
@@ -225,7 +225,7 @@
             (metadb-push #:path (path->string filename)
                          #:mtime (file-or-directory-modify-seconds filename)
                          #:headers headers
-                         #:body (if (or headers-only summary-only unparsed) null body))
+                         #:body (if (or headers-only summary-only unparsed) null body)))))
     (log "done\n")
     loaded))
 
