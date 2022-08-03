@@ -113,7 +113,7 @@ eot
         [body ""]
         [cache (cache-dump)])
     (set! body (string-join (for/list ([i cache])
-                              (format "- ~a:~a\n" (hash-ref i 'source) (hash-ref i 'path))) ""))
+                              (format "- ~a:~a(~a)\n" (hash-ref i 'source) (hash-ref i 'path) (hash-ref i 'mtime))) ""))
     (set! body (string-join (list "* Cache Dump\n\n" body "\n\n") ""))
     (cons "templatify" (cons headers body))))
   
