@@ -14,6 +14,7 @@
 (require geeklog/structs
          geeklog/load
          geeklog/markup
+         geeklog/log
          web-server/servlet
          web-server/servlet-env
          web-server/templates
@@ -116,7 +117,7 @@ eot
                [base-path         . "."]
                [hostname          . "*"]
                [data-path         . "docs"]
-               [suffixes          . (".txt" ".link" "")]
+               [suffixes          . (".txt" ".link" ".md" "")]
                [template          . "template.html"]
                [404-doc           . "error-404"]
                [default-transform . ratamarkup]
@@ -125,6 +126,7 @@ eot
                [format-time       . ,default-format-time]
                [format-date-time  . ,default-format-date-time]
                [templates         . ,default-templates]
+               [comments          . null]
                [cache             . ,(make-hash)])))
 
 (define site-settings
@@ -198,7 +200,7 @@ eot
     (printf "\tITEM: ~a\n" item)
     (set! stem (if (= 1 (length path-parts)) (first path-parts) (string-join (list (first path-parts) "/") "")))
     (printf "\tSTEM: ~a\n" stem)
-    (printf "\t\e[35mchecking handler for ~v in ~v\e[0m\n" stem (hash-keys uri-handlers))
+    (logp (format "\t\e[35mchecking handler for ~v in ~v\e[0m\n" stem (hash-keys uri-handlers)) #:indent 2 #:color 5 #:tag 'debug)
     (when (hash-has-key? uri-handlers stem) (set! handler (hash-ref uri-handlers stem)))
     (printf "\t\e[35mpath ~a handler ~a\e[0m\n" path-parts handler)
     (printf "\tHANDLER: ~a \n" handler)
@@ -242,7 +244,7 @@ eot
                      (cons 'include  (lambda (name (cacheable #f))
                                        (let ([load (lambda (name) (gldoc-body (load-parse-doc name #:settings settings)))])
                                          (when (and cacheable (not (hash-has-key? include-cache name)))
-                                           (eprintf "\tINCLUDE CACHE ~a\n" name)
+                                           (logp (format "INCLUDE CACHE ~a\n" name) #:color 55 #:indent 2 #:tag 'info)
                                            (hash-set! include-cache name (load name)))
                                          (if cacheable
                                              (hash-ref include-cache name)
