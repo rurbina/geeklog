@@ -23,8 +23,8 @@
 (define (check-level x)
   (<= x level))
 
-(define tags (make-hash '((:all . #t)
-                          (info . #t)
+; there's also debug and :all
+(define tags (make-hash '((info . #t)
                           (warning . #t)
                           (error . #t))))
 
