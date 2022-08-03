@@ -175,11 +175,12 @@
     (log `(filename . ,filename))
     ;; read and parse
     ;; check if cached -- cache is tiered with headers, summary and parsed body
-    (set! is-cached (metadb-check #:path filename #:headers-only headers-only #:summary-only summary-only))
-    ;; check if cache is stale and kill it if it is
-    (when (and is-cached (< is-cached (file-or-directory-modify-seconds filename)))
-      (metadb-delete filename)
-      (set! is-cached #f))
+    (when (not (hash-ref settings 'disable-cache #f))
+      (set! is-cached (metadb-check #:path filename #:headers-only headers-only #:summary-only summary-only))
+      ;; check if cache is stale and kill it if it is
+      (when (and is-cached (< is-cached (file-or-directory-modify-seconds filename)))
+        (metadb-delete filename)
+        (set! is-cached #f)))
     (if is-cached
         ;; read from cache
         (let ([dbread '()])
