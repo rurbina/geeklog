@@ -304,7 +304,6 @@
     (when (and (hash-has-key? blog-options 'cache_key)
                (not (hash-has-key? rm-wpblog-cache-hash (hash-ref blog-options 'cache_key))))
       (hash-set! rm-wpblog-cache-hash (hash-ref blog-options 'cache_key) items))
-    (eprintf "\t\t\trm-wpblog folding ")
     (set! output
           (for/fold ([output ""])
                     ([doc items])
@@ -341,10 +340,8 @@
                              (cons 'datetime (header 'timestamp-format-date-time))
                              (cons 'header header)))
                   (set! out-template (eval `(include-template ,(path->string template-path)) tns))
-                  (eprintf " (~a) " (hash-ref (gldoc-headers doc) 'name))
                   (hash-set! rm-wpblog-post-cache (hash-ref (gldoc-headers doc) 'name) out-template)
                   (string-append output out-template)))))
-    (eprintf " done\n")
     output))
 
 (define (rm-doclist-table text
