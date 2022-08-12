@@ -142,8 +142,9 @@
                   #:summary-chars   [summary-chars 200] ; or how many chars to load as summary if regexp fails
                   #:no-cache        [no-cache #f] ; disable caching
                   #:settings        settings)
-  (define (log x #:indent [i 0] #:level [l 1]) (logp x #:tag 'load #:level l #:indent i))
-  (log "load-doc: " #:indent 2)
+  (define (log x #:indent [i 0] #:level [l 1] #:tag [t 'load]) (logp x #:tag t #:level l #:indent i))
+  (define (logd x #:indent [i 1] #:level [l 1] #:tag [t 'debug]) (logp x #:tag t #:level l #:indent i #:color 6))
+  (log "load-doc: ")
   (let ([filename (if (path? path) path #f)]
         [loaded   null]
         [whole-file null]
@@ -158,10 +159,14 @@
     (set! reqnames (list (first reqnames) (unaccent-string (first reqnames))))
     (unless filename
       ;; try with all possible names and suffixes
-      (for ([fname  reqnames]
-            [suffix (hash-ref settings 'suffixes)]
-            #:break (and (path? filename) (file-exists? filename)))
-        (set! filename (build-path path (string-append fname suffix)))))
+      (set! filename
+            (for/first ([possible-filename
+                         (for*/list ([filename reqnames]
+                                     [suffix (hash-ref settings 'suffixes)])
+                             (build-path path (string-append filename suffix)))]
+                        #:when (and (path? possible-filename)
+                                    (file-exists? possible-filename)))
+              possible-filename)))
     ;; not found? croak!
     (when (or (null? filename) (not (file-exists? filename)))
       (log (format "new-loader: not loaded ~a (~a) in ~a ms\n" path filename (- (current-milliseconds) stime)) #:level 2)
