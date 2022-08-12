@@ -145,6 +145,7 @@ eot
         [errmsg ""]
         [docname null]
         [effective-mtime (box 0)])
+    (logp (format "do-load: possible suffixes are ~a\n" (hash-ref settings 'suffixes default-settings)) #:tag 'debug #:color 3)
     (set! docname (string-join (map (lambda (n) (path/param-path n)) (url-path (request-uri req))) "/"))
     (hash-set! settings 'recursion-depth (add1 (hash-ref settings 'recursion-depth 1)))
     (hash-set! settings 'effective-mtime effective-mtime)
@@ -192,17 +193,19 @@ eot
         [response-bytes #"OK"]
         [path-parts (for/list ([part (url-path (request-uri req))])
                       (path/param-path part))])
-    (printf "REQUEST: ~a ~a ~a\n" hostname path (date->string (current-date) 'iso-8601))
+
+    
+    (logp (format "\e[1mREQUEST: ~a ~a ~a\e[m\n" hostname path (date->string (current-date) 'iso-8601)) #:tag 'info)
     (set! settings (hash-ref site-settings hostname default-settings))
     (printf "\tSITE: ~a \n" (hash-ref settings 'name))
-    (printf "\t\e[1mPATH PARTS: ~a\e[0m\n" path-parts)
+    (logp (format "PATH PARTS: ~a\n" path-parts) #:indent 2 #:color 5 #:tag 'debug)
     (when (string=? item "") (set! item (hash-ref settings 'default-doc)))
     (printf "\tITEM: ~a\n" item)
     (set! stem (if (= 1 (length path-parts)) (first path-parts) (string-join (list (first path-parts) "/") "")))
     (printf "\tSTEM: ~a\n" stem)
-    (logp (format "\t\e[35mchecking handler for ~v in ~v\e[0m\n" stem (hash-keys uri-handlers)) #:indent 2 #:color 5 #:tag 'debug)
+    (logp (format "checking handler for ~v in ~v\n" stem (hash-keys uri-handlers)) #:indent 2 #:color 5 #:tag 'debug)
     (when (hash-has-key? uri-handlers stem) (set! handler (hash-ref uri-handlers stem)))
-    (printf "\t\e[35mpath ~a handler ~a\e[0m\n" path-parts handler)
+    (logp (format "path ~a handler ~a\n" path-parts handler) #:indent 2 #:color 5 #:tag 'debug)
     (printf "\tHANDLER: ~a \n" handler)
     (set! output (handler #:request req #:path path #:settings settings))
     (printf "\tTIME: ~a ms \n"  (- (current-milliseconds) start-time))
@@ -219,6 +222,7 @@ eot
        (set! headers        (hash-ref output 'headers headers))
        (set! output (hash-ref output 'output ""))])
     (printf "\tCODE: ~v\n\n" response-code)
+    (logp (format "[~a] ~a ~a ~a\n" (date->string (current-date) 'iso-8601) hostname path response-code) #:tag 'info)
     (response/full response-code
                    response-bytes
                    (current-seconds)
