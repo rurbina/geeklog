@@ -9,6 +9,7 @@
          racket/set
          racket/path
          racket/date
+         racket/port
          geeklog/structs
          geeklog/load
          geeklog/search
@@ -85,9 +86,23 @@
                               #:options  options)
   text)
 
+(define (transform-markdown text
+                              #:settings settings
+                              #:options  options)
+  (let ([processed '()])
+    (define-values (sp out in err) (subprocess #f #f #f "/usr/bin/perl" "/usr/bin/markdown"))
+    (write-string text in)
+    (close-output-port in)
+    (subprocess-wait sp)
+    (set! processed (port->string out))
+    (close-input-port out)
+    (close-input-port err)
+    processed))
+
 (define transforms (make-hash `([ratamarkup  . ,transform-ratamarkup]
                                 [passthrough . ,transform-passthrough]
-                                [passthru    . ,transform-passthrough])))
+                                [passthru    . ,transform-passthrough]
+                                [markdown    . ,transform-markdown])))
 
 ;; for small templates, snippets and such, parse and exec a string, should be quick and easy
 (define (render-at document #:data (data '()))
@@ -104,8 +119,9 @@
 (define (markup-doc doc #:settings settings #:options [options (make-hash)])
   (let ([body (gldoc-body doc)])
     (if (string? body)
-        (gldoc (gldoc-headers doc)
-               ((hash-ref transforms 'ratamarkup) (gldoc-body doc) #:settings settings #:options options))
+        (let [(transform (hash-ref (gldoc-headers doc) 'transform))]
+          (gldoc (gldoc-headers doc)
+                 ((hash-ref transforms transform) (gldoc-body doc) #:settings settings #:options options)))
         doc)))
 
 (define (markup text transform-type
