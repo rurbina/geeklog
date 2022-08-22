@@ -793,6 +793,19 @@
             (ratamarkup-process-inline (cdr (first tokens)) #:options options))
     "</figure>\n\n")))
 
+(define (rm-markdown text
+                  #:options [options (make-hash '((null . null)))]
+                  #:tokens  [tokens '()])
+  (let ([processed '()])
+    (define-values (sp out in err) (subprocess #f #f #f "/usr/bin/perl" "/usr/bin/markdown"))
+    (write-string text in)
+    (close-output-port in)
+    (subprocess-wait sp)
+    (set! processed (port->string out))
+    (close-input-port out)
+    (close-input-port err)
+    processed))
+
 (define (rm-raw text
                    #:options [globals (make-hash '((null . null)))]
                    #:tokens  [tokens '()])
@@ -817,6 +830,7 @@
 (ratamarkup-add-section-processor 'more              rm-more)
 (ratamarkup-add-section-processor 'raw               rm-raw)
 (ratamarkup-add-section-processor 'quote             rm-quote)
+(ratamarkup-add-section-processor 'markdown          rm-markdown)
 
 ;;; table rendering utility function
 
