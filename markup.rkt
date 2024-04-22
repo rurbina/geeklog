@@ -14,6 +14,7 @@
          geeklog/load
          geeklog/search
          geeklog/log
+         geeklog/markdown
          (rename-in scribble/reader [read read-at])
          (rename-in ratamarkup/ratamarkup
                     [ratamarkup ratamarkup-process])
@@ -793,18 +794,7 @@
             (ratamarkup-process-inline (cdr (first tokens)) #:options options))
     "</figure>\n\n")))
 
-(define (rm-markdown text
-                  #:options [options (make-hash '((null . null)))]
-                  #:tokens  [tokens '()])
-  (let ([processed '()])
-    (define-values (sp out in err) (subprocess #f #f #f "/usr/bin/perl" "/usr/bin/markdown"))
-    (write-string text in)
-    (close-output-port in)
-    (subprocess-wait sp)
-    (set! processed (port->string out))
-    (close-input-port out)
-    (close-input-port err)
-    processed))
+(define (rm-markdown text #:options [options (make-hash '((null . null)))] #:tokens  [tokens '()]) (markdown text #:options options))
 
 (define (rm-raw text
                    #:options [globals (make-hash '((null . null)))]
